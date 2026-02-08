@@ -63,7 +63,6 @@ export default function ResultPage() {
               New Generation
             </Button>
 
-            {/* Button が className を受けない前提で余白はラッパーで（見た目/機能は同じ） */}
             <span className="ml-2 inline-block">
               <Button href="/" variant="secondary">
                 Dashboard

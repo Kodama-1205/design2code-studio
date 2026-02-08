@@ -5,14 +5,8 @@ import Tabs from "@/components/ui/Tabs";
 import Card from "@/components/ui/Card";
 import FileTree from "@/components/ui/FileTree";
 import CodeBlock from "@/components/ui/CodeBlock";
-
-// ✅ 型だけimport（ランタイム影響なし）
 import type { GenerationBundle } from "@/lib/db";
 
-// ❌ これがビルドを落としていた（export解決に依存）
-// type Bundle = Awaited<ReturnType<import("@/lib/db").getGenerationBundle>>;
-
-// ✅ 型だけ固定（UI/機能は同じ）
 type Bundle = NonNullable<GenerationBundle>;
 
 export default function ResultTabs({ bundle }: { bundle: Bundle }) {
