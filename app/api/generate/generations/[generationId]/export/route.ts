@@ -8,34 +8,22 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { generationId: string } }
 ) {
-  // ==========================
-  // === ここはあなたの既存処理 ===
-  // - project を取得
-  // - generation を取得
-  // - zipBuffer を生成（Buffer）
+  // =========================================================
+  // TODO: ここに「今あなたが使っている既存処理」を移植してください
   //
-  // 例：
-  // const { project, generation, zipBuffer } = await buildExportZip(params.generationId);
+  // 必要な最終成果物はこの3つ：
+  //   - project: { id: string }
+  //   - generation: { id: string }
+  //   - zipBuffer: Buffer（lib/zip.ts の buildZipFromFiles が返すやつ）
   //
-  // ※あなたの現状コードをそのまま置いてOK
-  // ==========================
-
-  // ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-  // ★あなたの現状コードにある変数をそのまま使ってください
-  // project / generation / zipBuffer が既にある前提
-  // ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-  // @ts-ignore - ここはあなたの既存コードに合わせて変数が存在する前提
-  const { project, generation, zipBuffer } = (globalThis as any).__EXPORT_CONTEXT__ ?? {};
-  // ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-  // 注意：上の2行は「全文として成立させるための仮置き」です。
-  // 実際には、あなたの route.ts 内の既存処理で作っている
-  // project / generation / zipBuffer をそのまま使い、
-  // この仮置きブロックは削除してください。
-  // ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+  // 例）あなたの既存コードが既にこれらを作っているなら、そのまま貼るだけでOK
+  // =========================================================
+  const { project, generation, zipBuffer } = await getExportContext(params.generationId);
+  // =========================================================
 
   const filename = `design2code_${project.id}_${generation.id}.zip`;
 
-  // ✅ ここが修正点：Buffer を Uint8Array にして Response に渡す
+  // ✅ Buffer → Uint8Array にして Web標準 Response に渡す（型エラー回避）
   return new Response(new Uint8Array(zipBuffer), {
     status: 200,
     headers: {
@@ -44,4 +32,14 @@ export async function GET(
       "Cache-Control": "no-store",
     },
   });
+}
+
+/**
+ * ★ここはダミーです。あなたの既存処理に置き換えてください。
+ * ※ただし、返却（Response部分）はこのままが正解です。
+ */
+async function getExportContext(
+  generationId: string
+): Promise<{ project: { id: string }; generation: { id: string }; zipBuffer: Buffer }> {
+  throw new Error("getExportContext is not implemented. Paste your existing logic here.");
 }
