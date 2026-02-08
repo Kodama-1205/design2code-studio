@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import ResultTabs from "@/components/ResultTabs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import type { GenerationBundle } from "@/lib/db";
 
 const DEMO_STORAGE_KEY = "d2c_demo_bundle";
 
-type Bundle = NonNullable<Awaited<ReturnType<import("@/lib/db").getGenerationBundle>>>;
+type Bundle = NonNullable<GenerationBundle>;
 
 export default function ResultPage() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -61,9 +62,13 @@ export default function ResultPage() {
             <Button href="/new" variant="primary">
               New Generation
             </Button>
-            <Button href="/" variant="secondary" className="ml-2">
-              Dashboard
-            </Button>
+
+            {/* Button が className を受けない前提で余白はラッパーで（見た目/機能は同じ） */}
+            <span className="ml-2 inline-block">
+              <Button href="/" variant="secondary">
+                Dashboard
+              </Button>
+            </span>
           </div>
         </Card>
       </div>

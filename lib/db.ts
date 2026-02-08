@@ -1,8 +1,9 @@
+// lib/db.ts
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 
-type ProjectRow = {
+export type ProjectRow = {
   id: string;
   owner_id: string;
   name: string;
@@ -14,7 +15,7 @@ type ProjectRow = {
   updated_at: string;
 };
 
-type GenerationRow = {
+export type GenerationRow = {
   id: string;
   project_id: string;
   profile_id: string;
@@ -28,7 +29,7 @@ type GenerationRow = {
   created_at: string;
 };
 
-type FileRow = {
+export type FileRow = {
   id: string;
   generation_id: string;
   path: string;
@@ -38,7 +39,7 @@ type FileRow = {
   created_at: string;
 };
 
-type MappingRow = {
+export type MappingRow = {
   id: string;
   generation_id: string;
   figma_node_id: string;
@@ -49,6 +50,25 @@ type MappingRow = {
   loc_end: number | null;
   mapping_type: "component" | "element" | "style_token" | "asset";
   created_at: string;
+};
+
+// /result が型参照する「bundle」の型（anyに逃がさず明示）
+export type GenerationBundle = {
+  project: ProjectRow;
+  generation: {
+    id: string;
+    status: GenerationRow["status"];
+    figma_snapshot_hash: string | null;
+    ir_json: any | null;
+    report_json: any | null;
+    profileId: string | null;
+    profile: {
+      mode: string;
+      outputTarget: string;
+    };
+  };
+  files: FileRow[];
+  mappings: MappingRow[];
 };
 
 export async function listProjects(): Promise<Array<ProjectRow & { last_generation_id: string | null }>> {
@@ -122,10 +142,7 @@ export async function createOrUpdateProject(input: {
 }
 
 export async function createGeneration(input: { project_id: string; profile_id: string | null }): Promise<GenerationRow> {
-  // For MVP: if profile_id not provided, we still store profile snapshot inside report/IR and keep profile_id null in DB schema.
-  // But the table enforces NOT NULL in earlier SQL; if you used that exact SQL, profile_id is NOT NULL.
-  // Practical fix for MVP: you should create a default profile row and pass its id here.
-  // To avoid blocking, we will auto-create a default profile on the fly if needed.
+  // profile_id が未指定ならデフォルトを用意して使う
   const profileId = input.profile_id ?? (await ensureDefaultProfile());
 
   const { data, error } = await supabaseAdmin
@@ -233,8 +250,7 @@ export async function saveGenerationArtifacts(input: {
   const { error: fileErr } = await supabaseAdmin.from("d2c_files").upsert(fileRows, { onConflict: "generation_id,path" });
   if (fileErr) throw new Error(fileErr.message);
 
-  // Insert mappings
-  // For MVP: delete old mappings first
+  // Insert mappings（MVP: いったん全消しして入れ直し）
   await supabaseAdmin.from("d2c_mappings").delete().eq("generation_id", input.generationId);
 
   const mappingRows = input.mappings.map((m) => ({
@@ -252,30 +268,18 @@ export async function saveGenerationArtifacts(input: {
   if (mapErr) throw new Error(mapErr.message);
 }
 
-export async function getGenerationBundle(generationId: string): Promise<null | {
-  project: ProjectRow;
-  generation: {
-    id: string;
-    status: GenerationRow["status"];
-    figma_snapshot_hash: string | null;
-    ir_json: any | null;
-    report_json: any | null;
-    profileId: string | null;
-    profile: {
-      mode: string;
-      outputTarget: string;
-    };
-  };
-  files: FileRow[];
-  mappings: MappingRow[];
-}> {
+/**
+ * /result が参照する bundle を取得
+ * - 見つからなければ null
+ */
+export async function getGenerationBundle(generationId: string): Promise<GenerationBundle | null> {
   const { data: gen, error: genErr } = await supabaseAdmin
     .from("d2c_generations")
     .select("*")
     .eq("id", generationId)
     .single();
 
-  if (genErr) return null;
+  if (genErr || !gen) return null;
 
   const generation = gen as GenerationRow;
 
@@ -284,7 +288,7 @@ export async function getGenerationBundle(generationId: string): Promise<null | 
     .select("*")
     .eq("id", generation.project_id)
     .single();
-  if (projErr) return null;
+  if (projErr || !project) return null;
 
   const { data: profile } = await supabaseAdmin
     .from("d2c_profiles")
@@ -318,8 +322,8 @@ export async function getGenerationBundle(generationId: string): Promise<null | 
       report_json: generation.report_json,
       profileId: generation.profile_id,
       profile: {
-        mode: profile?.mode ?? "production",
-        outputTarget: profile?.output_target ?? "nextjs_tailwind"
+        mode: (profile as any)?.mode ?? "production",
+        outputTarget: (profile as any)?.output_target ?? "nextjs_tailwind"
       }
     },
     files: (files ?? []) as FileRow[],
@@ -330,3 +334,6 @@ export async function getGenerationBundle(generationId: string): Promise<null | 
 function sha256(s: string) {
   return crypto.createHash("sha256").update(s).digest("hex");
 }
+
+// --- 末尾に追記（既存ロジックはそのまま） ---
+export type GenerationBundle = Awaited<ReturnType<typeof getGenerationBundle>>;
