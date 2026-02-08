@@ -1,0 +1,97 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
+
+export default function Page() {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabaseBrowser.auth.getSession().then(({ data }) => {
+      if (data.session) window.location.assign("/");
+    });
+  }, []);
+
+  async function submit() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (mode === "login") {
+        const { error } = await supabaseBrowser.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        window.location.assign("/");
+      } else {
+        const { error } = await supabaseBrowser.auth.signUp({ email, password });
+        if (error) throw error;
+        setMessage("サインアップしました。メール認証が必要な設定の場合は、届いたメールを確認してください。");
+      }
+    } catch (e: any) {
+      setMessage(e?.message ?? "ログインに失敗しました。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="container-max py-10">
+      <Card className="max-w-xl mx-auto p-6">
+        <h1 className="h1">ログイン</h1>
+        <p className="p-muted mt-2">実務向けのユーザー分離（RLS）に対応するため、ログインが必要です。</p>
+
+        <div className="mt-6 flex gap-2">
+          <Button variant={mode === "login" ? "primary" : "secondary"} onClick={() => setMode("login")}>
+            ログイン
+          </Button>
+          <Button variant={mode === "signup" ? "primary" : "secondary"} onClick={() => setMode("signup")}>
+            新規登録
+          </Button>
+        </div>
+
+        <div className="mt-6 grid gap-3">
+          <div>
+            <label className="block text-sm font-semibold">Email</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="password"
+              className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
+            />
+            <div className="p-muted mt-2 text-xs">※ Supabase Auth の設定に従って、最小文字数などの制約があります。</div>
+          </div>
+        </div>
+
+        {message ? (
+          <div className="mt-4 rounded-xl border border-[rgb(var(--border))] bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm whitespace-pre-wrap">
+            {message}
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex gap-2">
+          <Button onClick={submit} disabled={busy || email.trim().length < 5 || password.length < 6} variant="primary">
+            {busy ? "..." : mode === "login" ? "ログイン" : "新規登録"}
+          </Button>
+          <Button href="/" variant="secondary">
+            戻る
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+

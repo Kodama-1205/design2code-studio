@@ -19,7 +19,9 @@ export async function POST(req: Request) {
   const zipBuffer = await buildZipFromFiles(files);
   const name = filename ?? "design2code_export.zip";
 
-  return new NextResponse(zipBuffer, {
+  // Buffer is not assignable to BodyInit - convert to Uint8Array for NextResponse
+  const body = new Uint8Array(zipBuffer);
+  return new NextResponse(body, {
     status: 200,
     headers: {
       "Content-Type": "application/zip",

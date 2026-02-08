@@ -7,6 +7,14 @@
 - **Next.js 14** (App Router)
 - **Supabase**（プロジェクト・生成結果の保存）
 - **TypeScript**, **Tailwind CSS**
+ 
+## 実務運用の前提（重要）
+
+Figma API はレート制限（HTTP 429）があります。実務で「毎回必ず完了」させるため、このアプリは **ジョブキュー + 自動再試行** を使います。
+
+- 429 になった場合も「失敗で止めず」、DB にジョブを保存して **待機→自動再試行**します
+- 直近の成功結果があれば **キャッシュを表示しつつ裏で最新生成**します（stale-while-revalidate）
+- 本番では **Cron（定期ワーカー）** を必ず有効化してください（`vercel.json` で設定済み）
 
 ## ローカルで動かす
 
@@ -36,8 +44,12 @@ cp .env.example .env
 | 変数名 | 説明 |
 |--------|------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase プロジェクトの URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase の anon key（Settings → API）。フロントのログイン/セッションで使用 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase のサービスロールキー（Settings → API） |
+| `D2C_ENCRYPTION_KEY` | サーバー側の秘密鍵。ユーザーのFigmaトークンを暗号化してDB保存するために使用（base64 32bytes推奨） |
 | `D2C_OWNER_ID` | デモ用オーナー ID（任意の UUID） |
+| `FIGMA_ACCESS_TOKEN` | Figma Personal Access Token（`file_content:read` などの権限が必要） |
+| `D2C_CRON_SECRET` | Vercel 以外で Cron を回す場合のシークレット |
 
 Supabase が無料プランや接続不可の場合は「デモモード」になり、保存は行われませんが生成・プレビュー・ZIP出力は利用できます。
 
@@ -97,6 +109,7 @@ git push -u origin main
 | `SUPABASE_SERVICE_ROLE_KEY` | （Supabase のサービスロールキー） | Production / Preview |
 | `D2C_OWNER_ID` | 例: `00000000-0000-0000-0000-000000000001` | Production / Preview |
 | `NEXT_PUBLIC_APP_URL` | `https://your-app.vercel.app`（デプロイ後の URL） | Production |
+| `FIGMA_ACCESS_TOKEN` | （Figma の Personal Access Token） | Production / Preview |
 
 - `NEXT_PUBLIC_APP_URL` は、Regenerate 実行後のリダイレクト先になります。デプロイ後は「Vercel のドメイン」に合わせて設定してください（例: `https://design2code-studio.vercel.app`）。
 
@@ -113,9 +126,24 @@ git push -u origin main
 
 ---
 
+## 本番の自動再試行（Cron ワーカー）
+
+Vercel を使う場合：
+
+- このリポジトリには `vercel.json` が含まれており、**1分ごとに** `/api/cron/generation-worker` が呼び出されます
+- Vercel Cron の呼び出しには `x-vercel-cron: 1` が付くため、追加の秘密情報は不要です
+
+Vercel 以外の場合：
+
+- `.env` に `D2C_CRON_SECRET` を設定し、Cron 側から `Authorization: Bearer <secret>` を付けて `/api/cron/generation-worker` を叩いてください
+
+補足：
+
+- 画面を開いたままでも `status` ポーリングで再試行は進みますが、**ユーザーが閉じた場合でも完了させる**には Cron が必要です。
+
 ## 主な機能
 
-- **New Generation**: Figma URL を入力してコード生成（現状はモックパイプライン）
+- **New Generation**: Figma URL を入力してコード生成（429時は自動再試行）
 - **結果画面**: プレビュー・コード・レポート・マッピングの確認
 - **Export ZIP**: 生成ファイル一式のダウンロード
 - **Regenerate**: 同じソースから再生成（保存が有効な場合）

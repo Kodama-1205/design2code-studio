@@ -15,7 +15,13 @@ export async function buildZipFromFiles(files: Array<{ path: string; content: st
     archive.pipe(stream);
 
     for (const f of files) {
-      archive.append(f.content, { name: f.path });
+      const dataUrlMatch = /^data:([^;]+);base64,(.+)$/s.exec(f.content);
+      if (dataUrlMatch) {
+        const buffer = Buffer.from(dataUrlMatch[2], "base64");
+        archive.append(buffer, { name: f.path });
+      } else {
+        archive.append(f.content, { name: f.path });
+      }
     }
 
     archive.finalize().catch(reject);
