@@ -334,3 +334,6 @@ export async function getGenerationBundle(generationId: string): Promise<Generat
 function sha256(s: string) {
   return crypto.createHash("sha256").update(s).digest("hex");
 }
+
+// --- 末尾に追記（既存ロジックはそのまま） ---
+export type GenerationBundle = Awaited<ReturnType<typeof getGenerationBundle>>;

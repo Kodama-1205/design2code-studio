@@ -5,13 +5,13 @@ import Tabs from "@/components/ui/Tabs";
 import Card from "@/components/ui/Card";
 import FileTree from "@/components/ui/FileTree";
 import CodeBlock from "@/components/ui/CodeBlock";
-import Button from "@/components/ui/Button";
+import type { GenerationBundle } from "@/lib/db";
 
-import type { GenerationBundle } from "@/lib/types";
+type Bundle = NonNullable<GenerationBundle>;
 
-export default function ResultTabs({ bundle }: { bundle: GenerationBundle }) {
-  const tabs = useMemo(() => ["プレビュー", "コード", "アセット", "レポート", "マッピング"] as const, []);
-  const [active, setActive] = useState<(typeof tabs)[number]>("プレビュー");
+export default function ResultTabs({ bundle }: { bundle: Bundle }) {
+  const tabs = useMemo(() => ["Preview", "Code", "Report", "Mapping"] as const, []);
+  const [active, setActive] = useState<(typeof tabs)[number]>("Preview");
 
   const { generation, files, mappings } = bundle;
   const isProvisional = Boolean((generation as any)?.error_json?.provisional);
@@ -197,12 +197,8 @@ export default function ResultTabs({ bundle }: { bundle: GenerationBundle }) {
       {active === "コード" && (
         <div className="grid lg:grid-cols-3">
           <div className="border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
-            <div className="px-4 py-3 text-sm font-semibold border-b border-[rgb(var(--border))]">ファイル</div>
-            <FileTree
-              paths={files.map((f) => f.path)}
-              selected={selectedPath}
-              onSelect={(p) => setSelectedPath(p)}
-            />
+            <div className="px-4 py-3 text-sm font-semibold border-b border-[rgb(var(--border))]">Files</div>
+            <FileTree paths={files.map((f) => f.path)} selected={selectedPath} onSelect={(p) => setSelectedPath(p)} />
           </div>
           <div className="lg:col-span-2 p-6">
             <div className="flex items-center justify-between gap-3">
@@ -262,10 +258,7 @@ export default function ResultTabs({ bundle }: { bundle: GenerationBundle }) {
 
           <div className="mt-4 grid gap-3">
             {mappings.slice(0, 30).map((m) => (
-              <div
-                key={m.id}
-                className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4"
-              >
+              <div key={m.id} className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="badge">{m.mapping_type}</span>
                   <span className="badge">{m.figma_node_id}</span>
@@ -278,9 +271,7 @@ export default function ResultTabs({ bundle }: { bundle: GenerationBundle }) {
                 </div>
               </div>
             ))}
-            {mappings.length > 30 && (
-              <div className="p-muted text-xs">表示は先頭30件のみ（MVP）。</div>
-            )}
+            {mappings.length > 30 && <div className="p-muted text-xs">表示は先頭30件のみ（MVP）。</div>}
           </div>
         </div>
       )}

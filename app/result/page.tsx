@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import ResultTabs from "@/components/ResultTabs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import type { GenerationBundle } from "@/lib/types";
+import type { GenerationBundle } from "@/lib/db";
 
 const DEMO_STORAGE_KEY = "d2c_demo_bundle";
 
-type Bundle = GenerationBundle;
+type Bundle = NonNullable<GenerationBundle>;
 
 export default function ResultPage() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -59,14 +59,15 @@ export default function ResultPage() {
             保存機能がオフの状態で生成した結果は、このページで表示されます。先に「新規生成」から Figma URL で生成してください。
           </p>
           <div className="mt-4">
-            <div className="flex gap-2">
-              <Button href="/new" variant="primary">
-                新規生成
+            <Button href="/new" variant="primary">
+              New Generation
+            </Button>
+
+            <span className="ml-2 inline-block">
+              <Button href="/" variant="secondary">
+                Dashboard
               </Button>
-              <Button href="/dashboard" variant="secondary">
-                ダッシュボード
-              </Button>
-            </div>
+            </span>
           </div>
         </Card>
       </div>
