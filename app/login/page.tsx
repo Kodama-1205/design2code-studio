@@ -64,13 +64,21 @@ export default function Page() {
           const ok = await tryDirectSupabase();
           if (ok) return;
         } catch (directErr: any) {
-          setMessage(directErr?.message ?? "ログインに失敗しました。");
+          const msg = directErr?.message ?? "";
+          const isFetchFailed = msg === "Failed to fetch" || msg === "fetch failed" || msg.includes("fetch") || msg.includes("NetworkError");
+          setMessage(
+            isFetchFailed
+              ? "通信できませんでした。\n・別のネットワーク（スマホのテザリングなど）で試す\n・シークレットモードで試す（拡張機能を無効化）\n・ローカル開発時は .env.local に Supabase の URL を設定"
+              : msg
+          );
           return;
         }
       }
 
       if (!res) {
-        setMessage("通信に失敗しました。別のネットワーク（例：スマホのテザリング）でお試しください。");
+        setMessage(
+          "通信できませんでした。\n・別のネットワーク（スマホのテザリングなど）で試す\n・シークレットモードで試す（拡張機能を無効化）\n・ローカル開発時は .env.local に Supabase の URL を設定"
+        );
         return;
       }
 
