@@ -1,131 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { login, signup } from "./actions";
 
 export default function Page() {
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    supabaseBrowser.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.assign("/");
-    });
-  }, []);
-
-  async function tryDirectSupabase(): Promise<boolean> {
-    if (mode === "login") {
-      const { data, error } = await supabaseBrowser.auth.signInWithPassword({ email, password });
-      if (!error && data.session) {
-        window.location.assign("/");
-        return true;
-      }
-      if (error) throw new Error(error.message);
-    } else {
-      const { data, error } = await supabaseBrowser.auth.signUp({ email, password });
-      if (!error) {
-        if (data.session) {
-          window.location.assign("/");
-          return true;
-        }
-        setMessage("サインアップしました。メール認証が必要な設定の場合は、届いたメールを確認してください。");
-        return true;
-      }
-      if (error) throw new Error(error.message);
-    }
-    return false;
-  }
-
-  async function submit() {
+  async function handleSubmit(formData: FormData) {
     setBusy(true);
     setMessage(null);
     try {
-      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      let res: Response | null = null;
-      let apiFailed = false;
-
-      try {
-        res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-      } catch {
-        apiFailed = true;
+      const m = formData.get("mode") as string;
+      const result = m === "signup" ? await signup(formData) : await login(formData);
+      if (result && "error" in result) {
+        setMessage(result.error);
+      } else if (result && "message" in result) {
+        setMessage(result.message);
       }
-
-      if (apiFailed || (res && (res.status === 503 || res.status === 500))) {
-        try {
-          const ok = await tryDirectSupabase();
-          if (ok) return;
-        } catch (directErr: any) {
-          const msg = directErr?.message ?? "";
-          const isFetchFailed = msg === "Failed to fetch" || msg === "fetch failed" || msg.includes("fetch") || msg.includes("NetworkError");
-          setMessage(
-            isFetchFailed
-              ? "通信できませんでした。\n・別のネットワーク（スマホのテザリングなど）で試す\n・シークレットモードで試す（拡張機能を無効化）\n・ローカル開発時は .env.local に Supabase の URL を設定"
-              : msg
-          );
-          return;
-        }
+    } catch (e: unknown) {
+      if (e && typeof e === "object" && "message" in e) {
+        setMessage(String((e as Error).message));
+      } else {
+        setMessage("エラーが発生しました");
       }
-
-      if (!res) {
-        setMessage(
-          "通信できませんでした。\n・別のネットワーク（スマホのテザリングなど）で試す\n・シークレットモードで試す（拡張機能を無効化）\n・ローカル開発時は .env.local に Supabase の URL を設定"
-        );
-        return;
-      }
-
-      let json: Record<string, unknown>;
-      try {
-        json = await res.json();
-      } catch {
-        setMessage(`API エラー (${res.status})`);
-        return;
-      }
-
-      if (!res.ok) {
-        setMessage((json?.error as string) ?? "失敗しました");
-        return;
-      }
-
-      if (json.access_token && json.refresh_token) {
-        try {
-          await supabaseBrowser.auth.setSession({
-            access_token: json.access_token as string,
-            refresh_token: json.refresh_token as string,
-          });
-        } catch {
-          try {
-            const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-            const projectRef = url ? new URL(url).hostname.split(".")[0] : "project";
-            const storageKey = `sb-${projectRef}-auth-token`;
-            const expiresIn = (json.expires_in as number) ?? 3600;
-            const session = {
-              access_token: json.access_token,
-              refresh_token: json.refresh_token,
-              expires_in: expiresIn,
-              expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-              token_type: "bearer",
-            };
-            localStorage.setItem(storageKey, JSON.stringify(session));
-            if (json.user) {
-              localStorage.setItem(`${storageKey}-user`, JSON.stringify({ user: json.user }));
-            }
-          } catch {}
-        }
-        window.location.assign("/");
-        return;
-      }
-      setMessage("サインアップしました。メール認証が必要な設定の場合は、届いたメールを確認してください。");
-    } catch (e: any) {
-      setMessage(e?.message ?? "ログインに失敗しました。");
     } finally {
       setBusy(false);
     }
@@ -146,12 +47,14 @@ export default function Page() {
           </Button>
         </div>
 
-        <div className="mt-6 grid gap-3">
+        <form action={handleSubmit} className="mt-6 grid gap-3">
+          <input type="hidden" name="mode" value={mode} />
           <div>
             <label className="block text-sm font-semibold">Email</label>
             <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              name="email"
+              type="email"
+              required
               placeholder="you@example.com"
               className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
             />
@@ -159,30 +62,31 @@ export default function Page() {
           <div>
             <label className="block text-sm font-semibold">Password</label>
             <input
+              name="password"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
               placeholder="password"
               className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
             />
             <div className="p-muted mt-2 text-xs">※ Supabase Auth の設定に従って、最小文字数などの制約があります。</div>
           </div>
-        </div>
 
-        {message ? (
-          <div className="mt-4 rounded-xl border border-[rgb(var(--border))] bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm whitespace-pre-wrap">
-            {message}
+          {message ? (
+            <div className="rounded-xl border border-[rgb(var(--border))] bg-[rgba(255,255,255,0.02)] px-4 py-3 text-sm whitespace-pre-wrap">
+              {message}
+            </div>
+          ) : null}
+
+          <div className="flex gap-2">
+            <Button type="submit" disabled={busy} variant="primary">
+              {busy ? "..." : mode === "login" ? "ログイン" : "新規登録"}
+            </Button>
+            <Button href="/" variant="secondary" type="button">
+              戻る
+            </Button>
           </div>
-        ) : null}
-
-        <div className="mt-6 flex gap-2">
-          <Button onClick={submit} disabled={busy || email.trim().length < 5 || password.length < 6} variant="primary">
-            {busy ? "..." : mode === "login" ? "ログイン" : "新規登録"}
-          </Button>
-          <Button href="/" variant="secondary">
-            戻る
-          </Button>
-        </div>
+        </form>
       </Card>
     </div>
   );

@@ -25,7 +25,7 @@ export async function login(formData: FormData) {
 
 export async function signup(formData: FormData) {
   const supabase = await createClient();
-  const email = (formData.get("formData.get("email") as string)?.trim();
+  const email = (formData.get("email") as string)?.trim();
   const password = formData.get("password") as string;
 
   if (!email || !password) {
