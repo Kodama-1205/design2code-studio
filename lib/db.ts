@@ -335,5 +335,266 @@ function sha256(s: string) {
   return crypto.createHash("sha256").update(s).digest("hex");
 }
 
+// --- Generation Jobs functions ---
+export type GenerationJobRow = {
+  id: string;
+  owner_id: string;
+  project_id: string;
+  generation_id: string;
+  status: "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
+  attempt_count: number;
+  next_attempt_at: string;
+  locked_by: string | null;
+  locked_at: string | null;
+  last_error: any | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function claimDueGenerationJobs(input: {
+  limit: number;
+  workerId: string;
+  lockTtlSec: number;
+}): Promise<GenerationJobRow[]> {
+  const now = new Date().toISOString();
+  const lockExpiresAt = new Date(Date.now() + input.lockTtlSec * 1000).toISOString();
+
+  const { data, error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .select("*")
+    .in("status", ["queued", "waiting"])
+    .lte("next_attempt_at", now)
+    .or(`locked_by.is.null,locked_at.lt.${lockExpiresAt}`)
+    .limit(input.limit)
+    .order("next_attempt_at", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  const claimed: GenerationJobRow[] = [];
+  for (const job of data ?? []) {
+    const { data: updated, error: updateErr } = await supabaseAdmin
+      .from("d2c_generation_jobs")
+      .update({
+        locked_by: input.workerId,
+        locked_at: now,
+        status: "running",
+        updated_at: now
+      })
+      .eq("id", job.id)
+      .eq("locked_by", job.locked_by ?? null)
+      .select("*")
+      .single();
+
+    if (!updateErr && updated) {
+      claimed.push(updated as GenerationJobRow);
+    }
+  }
+
+  return claimed;
+}
+
+export async function getGenerationJobByGenerationId(generationId: string): Promise<GenerationJobRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .select("*")
+    .eq("generation_id", generationId)
+    .single();
+
+  if (error || !data) return null;
+  return data as GenerationJobRow;
+}
+
+export async function getActiveGenerationJobForProject(input: {
+  ownerId: string;
+  projectId: string;
+}): Promise<GenerationJobRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .select("*")
+    .eq("owner_id", input.ownerId)
+    .eq("project_id", input.projectId)
+    .in("status", ["queued", "running", "waiting"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as GenerationJobRow;
+}
+
+export async function createGenerationJob(input: {
+  ownerId: string;
+  projectId: string;
+  generationId: string;
+}): Promise<GenerationJobRow> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .insert({
+      owner_id: input.ownerId,
+      project_id: input.projectId,
+      generation_id: input.generationId,
+      status: "queued",
+      attempt_count: 0,
+      next_attempt_at: now
+    })
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as GenerationJobRow;
+}
+
+export async function claimGenerationJob(input: {
+  generationId: string;
+  workerId: string;
+  lockTtlSec: number;
+}): Promise<GenerationJobRow | null> {
+  const now = new Date().toISOString();
+  const lockExpiresAt = new Date(Date.now() + input.lockTtlSec * 1000).toISOString();
+
+  const { data: job } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .select("*")
+    .eq("generation_id", input.generationId)
+    .single();
+
+  if (!job) return null;
+
+  if (job.locked_by && job.locked_at && job.locked_at > lockExpiresAt) {
+    return null; // Already locked
+  }
+
+  const { data: updated, error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .update({
+      locked_by: input.workerId,
+      locked_at: now,
+      status: "running",
+      updated_at: now
+    })
+    .eq("id", job.id)
+    .select("*")
+    .single();
+
+  if (error || !updated) return null;
+  return updated as GenerationJobRow;
+}
+
+export async function getLatestSucceededGenerationId(projectId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("d2c_generations")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("status", "succeeded")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateGenerationJobByGenerationId(
+  generationId: string,
+  updates: Partial<GenerationJobRow>
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
+    .eq("generation_id", generationId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function updateGenerationJob(jobId: string, updates: Partial<GenerationJobRow>): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("d2c_generation_jobs")
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", jobId);
+
+  if (error) throw new Error(error.message);
+}
+
+// --- Profiles functions ---
+export async function listProjects(ownerId: string): Promise<Array<ProjectRow & { last_generation_id: string | null }>> {
+  const { data: projects, error } = await supabaseAdmin
+    .from("d2c_projects")
+    .select("*")
+    .eq("owner_id", ownerId)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const results: Array<ProjectRow & { last_generation_id: string | null }> = [];
+  for (const p of projects ?? []) {
+    const { data: gens } = await supabaseAdmin
+      .from("d2c_generations")
+      .select("id,created_at")
+      .eq("project_id", p.id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    results.push({ ...p, last_generation_id: gens?.[0]?.id ?? null } as ProjectRow & { last_generation_id: string | null });
+  }
+  return results;
+}
+
+export async function listProfiles(ownerId: string): Promise<Array<{ id: string; name: string; mode: string; output_target: string }>> {
+  const { data, error } = await supabaseAdmin
+    .from("d2c_profiles")
+    .select("id, name, mode, output_target")
+    .eq("owner_id", ownerId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{ id: string; name: string; mode: string; output_target: string }>;
+}
+
+// --- Figma Image Cache functions ---
+export async function getFigmaImageCache(input: {
+  ownerId: string;
+  fileKey: string;
+  nodeId: string;
+}): Promise<{ mime: string; base64: string } | null> {
+  const { data, error } = await supabaseAdmin
+    .from("d2c_figma_image_cache")
+    .select("mime, base64")
+    .eq("owner_id", input.ownerId)
+    .eq("file_key", input.fileKey)
+    .eq("node_id", input.nodeId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return { mime: data.mime as string, base64: data.base64 as string };
+}
+
+export async function upsertFigmaImageCache(input: {
+  ownerId: string;
+  fileKey: string;
+  nodeId: string;
+  mime: string;
+  base64: string;
+}): Promise<void> {
+  const { error } = await supabaseAdmin.from("d2c_figma_image_cache").upsert(
+    {
+      owner_id: input.ownerId,
+      file_key: input.fileKey,
+      node_id: input.nodeId,
+      mime: input.mime,
+      base64: input.base64,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "owner_id,file_key,node_id" }
+  );
+
+  if (error) throw new Error(error.message);
+}
+
 // --- 末尾に追記（既存ロジックはそのまま） ---
 export type GenerationBundle = Awaited<ReturnType<typeof getGenerationBundle>>;
