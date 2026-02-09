@@ -130,7 +130,7 @@ git push -u origin main
 
 Vercel を使う場合：
 
-- このリポジトリには `vercel.json` が含まれており、**1分ごとに** `/api/cron/generation-worker` が呼び出されます
+- このリポジトリには `vercel.json` が含まれており、**1日1回**（0 0 * * * = 毎日 0:00 UTC）`/api/cron/generation-worker` が呼び出されます（Vercel Hobby プランは1日1回までの制限あり。Pro では頻度を上げられます）
 - Vercel Cron の呼び出しには `x-vercel-cron: 1` が付くため、追加の秘密情報は不要です
 
 Vercel 以外の場合：

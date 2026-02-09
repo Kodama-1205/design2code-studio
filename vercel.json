@@ -1,9 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/generation-worker",
-      "schedule": "*/1 * * * *"
-    }
-  ]
-}
-
+{"crons":[{"path":"/api/cron/generation-worker","schedule":"0 0 * * *"}]}
