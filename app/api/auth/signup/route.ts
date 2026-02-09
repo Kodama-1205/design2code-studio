@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { env } from "@/lib/env";
 
 /**
  * サーバー側で Supabase Auth のサインアップを実行するプロキシ。
@@ -7,19 +6,28 @@ import { env } from "@/lib/env";
  */
 export async function POST(req: NextRequest) {
   try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anonKey || anonKey.length < 20) {
+      return NextResponse.json(
+        { error: "環境変数が未設定です。NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_ANON_KEY を Vercel Production に設定してください。" },
+        { status: 503 }
+      );
+    }
+
     const body = await req.json();
     const { email, password } = body as { email?: string; password?: string };
     if (!email || !password) {
       return NextResponse.json({ error: "email と password が必要です" }, { status: 400 });
     }
 
-    const url = `${env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/signup`;
-    const res = await fetch(url, {
+    const authUrl = `${url.replace(/\/$/, "")}/auth/v1/signup`;
+    const res = await fetch(authUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
       },
       body: JSON.stringify({ email, password }),
       cache: "no-store",
