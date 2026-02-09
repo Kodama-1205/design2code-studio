@@ -22,15 +22,44 @@ export default function Page() {
     setBusy(true);
     setMessage(null);
     try {
-      if (mode === "login") {
-        const { error } = await supabaseBrowser.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        window.location.assign("/");
-      } else {
-        const { error } = await supabaseBrowser.auth.signUp({ email, password });
-        if (error) throw error;
-        setMessage("サインアップしました。メール認証が必要な設定の場合は、届いたメールを確認してください。");
+      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
+      let res: Response;
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+      } catch (fetchErr: any) {
+        const msg = fetchErr?.message ?? "";
+        if (msg === "Failed to fetch" || msg.includes("fetch") || msg.includes("NetworkError")) {
+          throw new Error(
+            "サーバーに接続できませんでした。Vercel に最新のデプロイが反映されているか、ネットワークを確認してください。"
+          );
+        }
+        throw fetchErr;
       }
+
+      let json: Record<string, unknown>;
+      try {
+        json = await res.json();
+      } catch {
+        throw new Error(`API エラー (${res.status})`);
+      }
+
+      if (!res.ok) {
+        throw new Error((json?.error as string) ?? "失敗しました");
+      }
+
+      if (json.access_token && json.refresh_token) {
+        await supabaseBrowser.auth.setSession({
+          access_token: json.access_token as string,
+          refresh_token: json.refresh_token as string,
+        });
+        window.location.assign("/");
+        return;
+      }
+      setMessage("サインアップしました。メール認証が必要な設定の場合は、届いたメールを確認してください。");
     } catch (e: any) {
       setMessage(e?.message ?? "ログインに失敗しました。");
     } finally {
