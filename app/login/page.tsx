@@ -18,37 +18,73 @@ export default function Page() {
     });
   }, []);
 
+  async function tryDirectSupabase(): Promise<boolean> {
+    if (mode === "login") {
+      const { data, error } = await supabaseBrowser.auth.signInWithPassword({ email, password });
+      if (!error && data.session) {
+        window.location.assign("/");
+        return true;
+      }
+      if (error) throw new Error(error.message);
+    } else {
+      const { data, error } = await supabaseBrowser.auth.signUp({ email, password });
+      if (!error) {
+        if (data.session) {
+          window.location.assign("/");
+          return true;
+        }
+        setMessage("サインアップしました。メール認証が必要な設定の場合は、届いたメールを確認してください。");
+        return true;
+      }
+      if (error) throw new Error(error.message);
+    }
+    return false;
+  }
+
   async function submit() {
     setBusy(true);
     setMessage(null);
     try {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      let res: Response;
+      let res: Response | null = null;
+      let apiFailed = false;
+
       try {
         res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-      } catch (fetchErr: any) {
-        const msg = fetchErr?.message ?? "";
-        if (msg === "Failed to fetch" || msg.includes("fetch") || msg.includes("NetworkError")) {
-          throw new Error(
-            "サーバーに接続できませんでした。Vercel に最新のデプロイが反映されているか、ネットワークを確認してください。"
-          );
+      } catch {
+        apiFailed = true;
+      }
+
+      if (apiFailed || (res && (res.status === 503 || res.status === 500))) {
+        try {
+          const ok = await tryDirectSupabase();
+          if (ok) return;
+        } catch (directErr: any) {
+          setMessage(directErr?.message ?? "ログインに失敗しました。");
+          return;
         }
-        throw fetchErr;
+      }
+
+      if (!res) {
+        setMessage("通信に失敗しました。別のネットワーク（例：スマホのテザリング）でお試しください。");
+        return;
       }
 
       let json: Record<string, unknown>;
       try {
         json = await res.json();
       } catch {
-        throw new Error(`API エラー (${res.status})`);
+        setMessage(`API エラー (${res.status})`);
+        return;
       }
 
       if (!res.ok) {
-        throw new Error((json?.error as string) ?? "失敗しました");
+        setMessage((json?.error as string) ?? "失敗しました");
+        return;
       }
 
       if (json.access_token && json.refresh_token) {
@@ -58,7 +94,6 @@ export default function Page() {
             refresh_token: json.refresh_token as string,
           });
         } catch {
-          // setSession が Supabase に接続しようとして失敗する場合のフォールバック
           try {
             const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
             const projectRef = url ? new URL(url).hostname.split(".")[0] : "project";
@@ -120,7 +155,7 @@ export default function Page() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="password"
-              className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
+              className="mt-2 w-full rounded-xl border border-[rgb(var(--surface2))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
             />
             <div className="p-muted mt-2 text-xs">※ Supabase Auth の設定に従って、最小文字数などの制約があります。</div>
           </div>
