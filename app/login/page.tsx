@@ -155,7 +155,7 @@ export default function Page() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="password"
-              className="mt-2 w-full rounded-xl border border-[rgb(var(--surface2))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
+              className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
             />
             <div className="p-muted mt-2 text-xs">※ Supabase Auth の設定に従って、最小文字数などの制約があります。</div>
           </div>
