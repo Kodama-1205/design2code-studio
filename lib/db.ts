@@ -71,29 +71,6 @@ export type GenerationBundle = {
   mappings: MappingRow[];
 };
 
-export async function listProjects(): Promise<Array<ProjectRow & { last_generation_id: string | null }>> {
-  const { data: projects, error } = await supabaseAdmin
-    .from("d2c_projects")
-    .select("*")
-    .eq("owner_id", env.D2C_OWNER_ID)
-    .order("updated_at", { ascending: false });
-
-  if (error) throw new Error(error.message);
-
-  // last generation per project (simple approach)
-  const results: Array<ProjectRow & { last_generation_id: string | null }> = [];
-  for (const p of projects ?? []) {
-    const { data: gens } = await supabaseAdmin
-      .from("d2c_generations")
-      .select("id,created_at")
-      .eq("project_id", p.id)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    results.push({ ...p, last_generation_id: gens?.[0]?.id ?? null });
-  }
-  return results;
-}
-
 export async function createOrUpdateProject(input: {
   id?: string;
   name: string;
