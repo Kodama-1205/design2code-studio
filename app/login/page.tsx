@@ -22,11 +22,13 @@ export default function Page() {
         setMessage(result.message);
       }
     } catch (e: unknown) {
-      if (e && typeof e === "object" && "message" in e) {
-        setMessage(String((e as Error).message));
-      } else {
-        setMessage("エラーが発生しました");
-      }
+      const msg = e && typeof e === "object" && "message" in e ? String((e as Error).message) : "エラーが発生しました";
+      const isFetchFailed = msg === "fetch failed" || msg === "Failed to fetch" || msg.includes("fetch") || msg.includes("NetworkError");
+      setMessage(
+        isFetchFailed
+          ? "Supabase への接続に失敗しました。\n・Vercel の環境変数（NEXT_PUBLIC_SUPABASE_URL）を確認\n・Supabase プロジェクトが一時停止していないか確認\n・数秒後に再試行してください"
+          : msg
+      );
     } finally {
       setBusy(false);
     }
