@@ -16,11 +16,9 @@ export async function POST(req: Request) {
   }
 
   const { files, filename } = parsed.data;
-  const zipBuffer = await buildZipFromFiles(files);
+  const body = await buildZipFromFiles(files);
   const name = filename ?? "design2code_export.zip";
 
-  // Buffer is not assignable to BodyInit - convert to Uint8Array for NextResponse
-  const body = new Uint8Array(zipBuffer);
   return new NextResponse(body, {
     status: 200,
     headers: {

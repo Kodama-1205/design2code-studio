@@ -1,10 +1,16 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createOrUpdateProject, createGeneration, saveGenerationArtifacts, setGenerationStatus } from "@/lib/db";
+import {
+  createOrUpdateProject,
+  createGeneration,
+  saveGenerationArtifacts,
+  setGenerationStatus
+} from "@/lib/db";
 import { runMockPipeline } from "@/lib/mockPipeline";
 import { buildDemoBundle } from "@/lib/demoBundle";
-import { env } from "@/lib/env";
+import { envServer } from "@/lib/envServer";
+import { requireUserIdFromRequest } from "@/lib/authApi";
 
 const BodySchema = z.object({
   sourceUrl: z.string().min(10),
@@ -13,6 +19,13 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: Request) {
+  let userId: string;
+  try {
+    userId = await requireUserIdFromRequest(req);
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "unauthorized" }, { status: 401 });
+  }
+
   const json = await req.json().catch(() => null);
   const parsed = BodySchema.safeParse(json);
 
@@ -22,13 +35,17 @@ export async function POST(req: Request) {
 
   const { sourceUrl, profileId, projectId } = parsed.data;
 
-  const fileKeyMatch = sourceUrl.match(/figma\.com\/file\/([^/]+)/);
+  const fileKeyMatch =
+    sourceUrl.match(/figma\.com\/file\/([^/]+)/) ??
+    sourceUrl.match(/figma\.com\/design\/([^/]+)/) ??
+    sourceUrl.match(/figma\.com\/proto\/([^/]+)/);
   const nodeIdMatch = sourceUrl.match(/node-id=([^&]+)/);
 
   const figmaFileKey = fileKeyMatch?.[1] ?? "UNKNOWN_FILEKEY";
   const figmaNodeId = nodeIdMatch ? decodeURIComponent(nodeIdMatch[1]).replace("%3A", ":") : "0:0";
+  const normalizedNodeId = figmaNodeId.includes(":") ? figmaNodeId : figmaNodeId.replace(/-/g, ":");
 
-  const projectName = `Project ${figmaFileKey.slice(0, 6)} / ${figmaNodeId}`;
+  const projectName = `Project ${figmaFileKey.slice(0, 6)} / ${normalizedNodeId}`;
 
   let project: { id: string; owner_id: string; name: string; figma_file_key: string; figma_node_id: string; source_url: string } | null = null;
   let generation: { id: string; project_id: string } | null = null;
@@ -36,9 +53,10 @@ export async function POST(req: Request) {
   try {
     project = await createOrUpdateProject({
       id: projectId,
+      owner_id: userId,
       name: projectName,
       figma_file_key: figmaFileKey,
-      figma_node_id: figmaNodeId,
+      figma_node_id: normalizedNodeId,
       source_url: sourceUrl,
       default_profile_id: profileId ?? null
     });
@@ -56,7 +74,7 @@ export async function POST(req: Request) {
 
     const artifacts = await runMockPipeline({
       figmaFileKey,
-      figmaNodeId,
+      figmaNodeId: normalizedNodeId,
       sourceUrl,
       profileOverrideId: profileId ?? undefined,
       projectId: tempProjectId,
@@ -69,9 +87,9 @@ export async function POST(req: Request) {
       {
         name: projectName,
         figma_file_key: figmaFileKey,
-        figma_node_id: figmaNodeId,
+        figma_node_id: normalizedNodeId,
         source_url: sourceUrl,
-        owner_id: env.D2C_OWNER_ID
+        owner_id: userId
       },
       artifacts
     );
@@ -82,7 +100,7 @@ export async function POST(req: Request) {
   try {
     const artifacts = await runMockPipeline({
       figmaFileKey,
-      figmaNodeId,
+      figmaNodeId: normalizedNodeId,
       sourceUrl,
       profileOverrideId: profileId ?? undefined,
       projectId: project!.id,
@@ -110,7 +128,7 @@ export async function POST(req: Request) {
   } catch (e: any) {
     const artifacts = await runMockPipeline({
       figmaFileKey,
-      figmaNodeId,
+      figmaNodeId: normalizedNodeId,
       sourceUrl,
       profileOverrideId: profileId ?? undefined,
       projectId: project!.id,
@@ -124,9 +142,9 @@ export async function POST(req: Request) {
         {
           name: projectName,
           figma_file_key: figmaFileKey,
-          figma_node_id: figmaNodeId,
+          figma_node_id: normalizedNodeId,
           source_url: sourceUrl,
-          owner_id: (project as any).owner_id ?? env.D2C_OWNER_ID
+          owner_id: (project as any).owner_id ?? envServer.D2C_OWNER_ID
         },
         artifacts
       );

@@ -4,7 +4,7 @@ import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "Design2Code Studio",
-  description: "Generate maintainable code from design sources (MVP scaffold)."
+  description: "デザインソースから保守しやすいコードを生成します。"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

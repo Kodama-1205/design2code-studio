@@ -35,7 +35,7 @@ export default function ResultPage() {
           filename: `design2code_demo_${bundle.project.id}_${bundle.generation.id}.zip`
         })
       });
-      if (!res.ok) throw new Error("Export failed");
+      if (!res.ok) throw new Error("ZIP出力に失敗しました。");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -56,7 +56,7 @@ export default function ResultPage() {
         <Card className="p-6">
           <div className="h2">デモ結果がありません</div>
           <p className="p-muted mt-2">
-            保存機能がオフの状態で生成した結果は、このページで表示されます。先に New Generation から Figma URL で生成してください。
+            保存機能がオフの状態で生成した結果は、このページで表示されます。先に「新規生成」から Figma URL で生成してください。
           </p>
           <div className="mt-4">
             <Button href="/new" variant="primary">
@@ -95,13 +95,13 @@ export default function ResultPage() {
 
         <div className="flex gap-2">
           <Button onClick={handleExportZip} disabled={exporting} variant="secondary">
-            {exporting ? "Exporting..." : "Export ZIP"}
+            {exporting ? "出力中..." : "ZIPを出力"}
           </Button>
           <Button href="/new" variant="ghost">
-            New Generation
+            新規生成
           </Button>
-          <Button href="/" variant="secondary">
-            Dashboard
+          <Button href="/dashboard" variant="secondary">
+            ダッシュボード
           </Button>
         </div>
       </div>

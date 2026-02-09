@@ -8,16 +8,11 @@ export const runtime = "nodejs";
 
 type ZipFile = { path: string; content: string };
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { generationId: string } }
-) {
-  const { project, generation, zipBuffer } = await getExportContext(params.generationId);
+  const body = await buildZipFromFiles(files.map((f) => ({ path: f.path, content: f.content })));
 
   const filename = `design2code_${project.id}_${generation.id}.zip`;
 
-  // ✅ Buffer → Uint8Array（BodyInit互換）で返す
-  return new Response(new Uint8Array(zipBuffer), {
+  return new NextResponse(body, {
     status: 200,
     headers: {
       "Content-Type": "application/zip",

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AuthButton from "@/components/AuthButton";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -18,14 +19,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               href="/new"
               className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-3 py-2 text-sm hover:border-[rgba(170,90,255,0.55)] transition"
             >
-              New
+              新規生成
             </Link>
             <Link
-              href="/"
+              href="/dashboard"
               className="rounded-xl border border-[rgb(var(--border))] bg-transparent px-3 py-2 text-sm hover:bg-[rgba(255,255,255,0.03)] transition"
             >
-              Dashboard
+              ダッシュボード
             </Link>
+            <Link
+              href="/settings"
+              className="rounded-xl border border-[rgb(var(--border))] bg-transparent px-3 py-2 text-sm hover:bg-[rgba(255,255,255,0.03)] transition"
+            >
+              設定
+            </Link>
+            <AuthButton />
           </nav>
         </div>
       </header>
@@ -34,7 +42,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <footer className="border-t border-[rgb(var(--border))] mt-14">
         <div className="container-max py-6 text-xs text-[rgb(var(--muted))]">
-          This scaffold stores generated files in DB for code view and ZIP export.
+          生成物はDBに保存され、コード表示とZIP出力ができます。
         </div>
       </footer>
     </div>
