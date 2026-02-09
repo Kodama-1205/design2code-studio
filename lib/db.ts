@@ -73,6 +73,7 @@ export type GenerationBundle = {
 
 export async function createOrUpdateProject(input: {
   id?: string;
+  owner_id?: string;
   name: string;
   figma_file_key: string;
   figma_node_id: string;
@@ -80,6 +81,7 @@ export async function createOrUpdateProject(input: {
   default_profile_id: string | null;
 }): Promise<ProjectRow> {
   const now = new Date().toISOString();
+  const ownerId = input.owner_id ?? env.D2C_OWNER_ID;
 
   if (input.id) {
     const { data, error } = await supabaseAdmin
@@ -103,7 +105,7 @@ export async function createOrUpdateProject(input: {
   const { data, error } = await supabaseAdmin
     .from("d2c_projects")
     .insert({
-      owner_id: env.D2C_OWNER_ID,
+      owner_id: ownerId,
       name: input.name,
       figma_file_key: input.figma_file_key,
       figma_node_id: input.figma_node_id,
