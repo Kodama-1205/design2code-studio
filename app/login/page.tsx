@@ -52,10 +52,31 @@ export default function Page() {
       }
 
       if (json.access_token && json.refresh_token) {
-        await supabaseBrowser.auth.setSession({
-          access_token: json.access_token as string,
-          refresh_token: json.refresh_token as string,
-        });
+        try {
+          await supabaseBrowser.auth.setSession({
+            access_token: json.access_token as string,
+            refresh_token: json.refresh_token as string,
+          });
+        } catch {
+          // setSession が Supabase に接続しようとして失敗する場合のフォールバック
+          try {
+            const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+            const projectRef = url ? new URL(url).hostname.split(".")[0] : "project";
+            const storageKey = `sb-${projectRef}-auth-token`;
+            const expiresIn = (json.expires_in as number) ?? 3600;
+            const session = {
+              access_token: json.access_token,
+              refresh_token: json.refresh_token,
+              expires_in: expiresIn,
+              expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+              token_type: "bearer",
+            };
+            localStorage.setItem(storageKey, JSON.stringify(session));
+            if (json.user) {
+              localStorage.setItem(`${storageKey}-user`, JSON.stringify({ user: json.user }));
+            }
+          } catch {}
+        }
         window.location.assign("/");
         return;
       }
