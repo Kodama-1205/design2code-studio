@@ -22,16 +22,30 @@ export async function POST(req: NextRequest) {
     }
 
     const authUrl = `${url.replace(/\/$/, "")}/auth/v1/token?grant_type=password`;
-    const res = await fetch(authUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-      },
-      body: JSON.stringify({ email, password }),
-      cache: "no-store",
-    });
+    let res: Response;
+    try {
+      res = await fetch(authUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({ email, password }),
+        cache: "no-store",
+      });
+    } catch (fetchErr: any) {
+      const msg = fetchErr?.message ?? "";
+      const isNetwork = msg === "fetch failed" || msg === "Failed to fetch" || msg.includes("ECONNREFUSED") || msg.includes("ENOTFOUND");
+      return NextResponse.json(
+        {
+          error: isNetwork
+            ? "Supabase への接続に失敗しました。Vercel の NEXT_PUBLIC_SUPABASE_URL が正しいか、Supabase プロジェクトが一時停止していないか確認してください。"
+            : msg || "接続エラーが発生しました",
+        },
+        { status: 503 }
+      );
+    }
 
     const data = await res.json();
     if (!res.ok) {
