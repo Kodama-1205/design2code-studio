@@ -18,6 +18,25 @@ export async function createClient() {
           // Server Component から呼ばれた場合は無視
         }
       }
+    },
+    global: {
+      fetch: async (input, init) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
+        
+        try {
+          const response = await fetch(input, {
+            ...init,
+            signal: controller.signal,
+            keepalive: true
+          });
+          clearTimeout(timeoutId);
+          return response;
+        } catch (e) {
+          clearTimeout(timeoutId);
+          throw e;
+        }
+      }
     }
   });
 }
