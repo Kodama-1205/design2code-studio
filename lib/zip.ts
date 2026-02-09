@@ -1,14 +1,17 @@
 import archiver from "archiver";
 import { PassThrough } from "stream";
 
-export async function buildZipFromFiles(files: Array<{ path: string; content: string }>): Promise<Buffer> {
+/** Returns Uint8Array (BodyInit-compatible) for direct use in NextResponse/Response. */
+export async function buildZipFromFiles(
+  files: Array<{ path: string; content: string }>
+): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const archive = archiver("zip", { zlib: { level: 9 } });
     const stream = new PassThrough();
 
     const chunks: Buffer[] = [];
     stream.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
     stream.on("error", reject);
 
     archive.on("error", reject);

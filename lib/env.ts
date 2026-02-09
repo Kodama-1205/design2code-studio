@@ -2,21 +2,22 @@ import { z } from "zod";
 
 const EnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(20)
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(20),
+  D2C_OWNER_ID: z.string().uuid().optional().transform((v) => v ?? "00000000-0000-0000-0000-000000000000")
 });
 
 const parsed = EnvSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  D2C_OWNER_ID: process.env.D2C_OWNER_ID
 });
 
 export const env: z.infer<typeof EnvSchema> = parsed.success
   ? parsed.data
   : ({
-      // Fallback values to avoid crashing the entire app when env is missing.
-      // API calls will fail gracefully; UI should show a helpful error instead of 500.
       NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321",
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: "missing_anon_key"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "missing_anon_key",
+      D2C_OWNER_ID: "00000000-0000-0000-0000-000000000000"
     } as any);
 
 export const envPublicOk = parsed.success;
