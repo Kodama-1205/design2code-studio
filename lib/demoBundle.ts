@@ -33,7 +33,7 @@ export type DemoFileRow = {
   path: string;
   content: string;
   content_sha256: string;
-  kind: "code" | "config" | "style" | "asset_index" | "asset";
+  kind: "code" | "config" | "style" | "asset_index";
   created_at: string;
 };
 

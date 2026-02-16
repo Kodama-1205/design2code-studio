@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { deleteProject } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -13,6 +14,10 @@ export async function DELETE(
 ) {
   try {
     await deleteProject(params.projectId);
+
+    // ✅ 重要：ダッシュボードのキャッシュを明示的に破棄
+    revalidatePath("/dashboard");
+
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     return NextResponse.json(

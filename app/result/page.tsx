@@ -1,73 +1,92 @@
 "use client";
 
+// app/result/page.tsx
 import { useEffect, useState } from "react";
 import ResultTabs from "@/components/ResultTabs";
-import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
 import type { GenerationBundle } from "@/lib/db";
 
 const DEMO_STORAGE_KEY = "d2c_demo_bundle";
 
 type Bundle = NonNullable<GenerationBundle>;
 
-export default function ResultPage() {
+function toJaStatus(status: string) {
+  switch (status) {
+    case "succeeded":
+      return "成功";
+    case "running":
+      return "実行中";
+    case "failed":
+      return "失敗";
+    case "queued":
+      return "待機中";
+    default:
+      return status;
+  }
+}
+
+function toJaMode(mode: string) {
+  switch (mode) {
+    case "production":
+      return "本番";
+    case "development":
+      return "開発";
+    default:
+      return mode;
+  }
+}
+
+function toJaOutputTarget(target: string) {
+  if (target === "nextjs_tailwind") return "Next.js / Tailwind";
+  return target;
+}
+
+export default function Page() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // デモモード: sessionStorage から取得
     try {
       const raw = sessionStorage.getItem(DEMO_STORAGE_KEY);
-      if (raw) setBundle(JSON.parse(raw) as Bundle);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Bundle;
+        setBundle(parsed);
+      }
     } catch {
-      setBundle(null);
+      // sessionStorage の読み取りに失敗
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  async function handleExportZip() {
-    if (!bundle) return;
-    setExporting(true);
-    try {
-      const res = await fetch("/api/export-zip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: bundle.files.map((f) => ({ path: f.path, content: f.content })),
-          filename: `design2code_demo_${bundle.project.id}_${bundle.generation.id}.zip`
-        })
-      });
-      if (!res.ok) throw new Error("ZIP出力に失敗しました。");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `design2code_demo_${bundle.project.id}_${bundle.generation.id}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setExporting(false);
-    }
+  if (loading) {
+    return (
+      <div className="container-max py-10">
+        <Card className="p-6">
+          <div className="h2">読み込み中...</div>
+        </Card>
+      </div>
+    );
   }
 
-  if (bundle === null) {
+  // バンドルが無い場合（デモモードの結果が無い）
+  if (!bundle) {
     return (
       <div className="container-max py-10">
         <Card className="p-6">
           <div className="h2">デモ結果がありません</div>
           <p className="p-muted mt-2">
-            保存機能がオフの状態で生成した結果は、このページで表示されます。先に「新規生成」から Figma URL で生成してください。
+            先に「新規作成」から Figma URL を生成してください。
           </p>
-          <div className="mt-4">
+          <div className="mt-4 flex gap-2">
             <Button href="/new" variant="primary">
-              New Generation
+              新規作成
             </Button>
-
-            <span className="ml-2 inline-block">
-              <Button href="/" variant="secondary">
-                Dashboard
-              </Button>
-            </span>
+            <Button href="/" variant="secondary">
+              ダッシュボード
+            </Button>
           </div>
         </Card>
       </div>
@@ -79,31 +98,21 @@ export default function ResultPage() {
   return (
     <div className="container-max py-10">
       <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200 mb-6">
-        <strong>デモモード</strong> — プロジェクトは保存されていません。コードの確認とZIP出力のみ利用できます。2月2日以降の Supabase プロプランで保存が有効になります。
+        <strong>デモモード</strong> — プロジェクトは保存されていません。コードの確認とZIP出力のみ利用できます。
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="h1">{project.name}</h1>
-            <span className="badge">{generation.status}</span>
-            <span className="badge">{generation.profile.mode}</span>
-            <span className="badge">{generation.profile.outputTarget}</span>
+            <span className="badge">{toJaStatus(generation.status)}</span>
+            <span className="badge">{toJaMode(generation.profile.mode)}</span>
+            <span className="badge">{toJaOutputTarget(generation.profile.outputTarget)}</span>
           </div>
           <p className="p-muted mt-2 truncate">{project.source_url}</p>
         </div>
 
-        <div className="flex gap-2">
-          <Button onClick={handleExportZip} disabled={exporting} variant="secondary">
-            {exporting ? "出力中..." : "ZIPを出力"}
-          </Button>
-          <Button href="/new" variant="ghost">
-            新規生成
-          </Button>
-          <Button href="/dashboard" variant="secondary">
-            ダッシュボード
-          </Button>
-        </div>
+        {/* /result は "表示専用" なので、操作ボタンは置かない（スクショ安定化） */}
       </div>
 
       <div className="mt-6">

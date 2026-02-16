@@ -5,44 +5,31 @@ import Tabs from "@/components/ui/Tabs";
 import Card from "@/components/ui/Card";
 import FileTree from "@/components/ui/FileTree";
 import CodeBlock from "@/components/ui/CodeBlock";
+import Button from "@/components/ui/Button";
 import type { GenerationBundle } from "@/lib/db";
 
 type Bundle = NonNullable<GenerationBundle>;
 
 export default function ResultTabs({ bundle }: { bundle: Bundle }) {
-  const tabs = useMemo(() => ["Preview", "Code", "Report", "Mapping"] as const, []);
-  const [active, setActive] = useState<(typeof tabs)[number]>("Preview");
+  const tabs = useMemo(() => ["プレビュー", "コード", "レポート", "マッピング"] as const, []);
+  const [active, setActive] = useState<(typeof tabs)[number]>("プレビュー");
 
-  const { generation, files, mappings } = bundle;
-  const isProvisional = Boolean((generation as any)?.error_json?.provisional);
-  const isMockFallback = isProvisional || (generation as any)?.error_json?.fallback?.type === "mock";
+  const { project, generation, files, mappings } = bundle;
 
-  const isFigmaUrl = /figma\.com\//.test(bundle.project.source_url ?? "");
-  const embedUrl = useMemo(() => {
-    const u = bundle.project.source_url ?? "";
-    if (!u) return "";
-    if (u.includes("hide-ui=1")) return u;
-    return `${u}${u.includes("?") ? "&" : "?"}hide-ui=1`;
-  }, [bundle.project.source_url]);
-
-  // UX: When we're showing provisional/mock due to rate limit, NEVER prioritize a dummy image.
-  // Always show Figma embed first so the user can confirm "the real design" immediately.
-  const preferEmbed = isFigmaUrl && isMockFallback;
-
-  const assetFiles = useMemo(() => {
-    if (preferEmbed) return [];
-    return files.filter((f) => f.kind === "asset" || f.content.startsWith("data:image/"));
-  }, [files, preferEmbed]);
-  const previewImage = useMemo(() => assetFiles.find((f) => f.content.startsWith("data:image/")) ?? null, [assetFiles]);
-  const [previewWidth, setPreviewWidth] = useState(1024);
-  const defaultFilePath =
-    files.find((f) => f.path.endsWith("README.md"))?.path ??
-    files.find((f) => f.kind !== "asset" && !f.content.startsWith("data:image/"))?.path ??
-    files[0]?.path ??
-    "";
+  const defaultFilePath = files.find((f) => f.path.endsWith("README.md"))?.path ?? files[0]?.path ?? "";
   const [selectedPath, setSelectedPath] = useState(defaultFilePath);
 
   const selectedFile = files.find((f) => f.path === selectedPath);
+
+  // ✅ プレビューURLは必ず /api/previews に統一（Storage → download）
+  const snapshotHash = generation.figma_snapshot_hash ?? "";
+  const previewApiUrl =
+    project?.id && snapshotHash ? `/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}` : "";
+
+  const [imgOk, setImgOk] = useState<boolean | null>(null);
+
+  // レポート側に debug がある場合は補助表示（無くてもOK）
+  const previewDebug = (generation.report_json as any)?.preview_debug;
 
   return (
     <Card className="p-0 overflow-hidden">
@@ -52,8 +39,6 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
           <div className="flex gap-2">
             <span className="badge">ファイル: {files.length}</span>
             <span className="badge">マッピング: {mappings.length}</span>
-            {isMockFallback ? <span className="badge">フォールバック: モック</span> : null}
-            {isProvisional ? <span className="badge">暫定</span> : null}
           </div>
         </div>
         <Tabs tabs={tabs as unknown as string[]} active={active} onChange={(t) => setActive(t as any)} />
@@ -61,134 +46,73 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
 
       {active === "プレビュー" && (
         <div className="p-6">
-          <div className="h2">即時プレビュー</div>
+          <div className="h2">プレビュー</div>
           <p className="p-muted mt-2">
-            まずは“今すぐ確認できること”を最優先に表示します。Figma URL の場合は埋め込み表示が最速（Figma API 429の影響を受けにくい）です。
+            生成時に取得したスクリーンショット（PNG）を表示します。URLは最大30日で失効するため、表示されない場合は「再生成（トークン入力）」で再取得してください。
           </p>
 
-          {isMockFallback ? (
-            <div className="mt-4 rounded-2xl border border-[rgba(59,130,246,0.45)] bg-[rgba(59,130,246,0.08)] p-4 text-sm">
-              <div className="font-semibold">暫定表示（即時表示優先）</div>
-              <div className="mt-1 text-[rgb(var(--muted))]">
-                Figma 側のレート制限（429）でも、プレビューは埋め込みで即確認できます。コードは暫定を即表示し、裏で本生成を再試行します。
+          <div className="mt-4 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+            {!previewApiUrl ? (
+              <div className="text-sm text-[rgb(var(--muted))]">
+                スナップショットがありません（node-id無し、または生成保存に失敗している可能性があります）。
               </div>
-            </div>
-          ) : null}
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-[rgb(var(--muted))] break-all">{previewApiUrl}</div>
+                  <a className="text-xs underline text-[rgb(var(--muted))]" href={previewApiUrl} target="_blank" rel="noreferrer">
+                    別タブで開く
+                  </a>
+                </div>
+
+                <div className="mt-3">
+                  {imgOk === false && (
+                    <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                      <div className="font-semibold">プレビュー画像が表示できません</div>
+                      <div className="mt-1 text-xs text-amber-200/90">
+                        Storageに画像が無い / 取得に失敗している可能性があります。必要なら「再生成」でトークンを入れて再取得してください。
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          href={`/new?projectId=${encodeURIComponent(project.id)}&sourceUrl=${encodeURIComponent(project.source_url ?? "")}`}
+                          variant="secondary"
+                        >
+                          再生成（トークン入力）
+                        </Button>
+                      </div>
+
+                      {previewDebug?.figma_images_api?.status && (
+                        <div className="mt-3 text-xs text-amber-200/80">
+                          debug: figma_images_api.status={String(previewDebug.figma_images_api.status)} / node_api={String(previewDebug.figma_node_id_api)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <img
+                    src={previewApiUrl}
+                    alt="preview"
+                    className="w-full rounded-xl border border-white/10"
+                    onLoad={() => setImgOk(true)}
+                    onError={() => setImgOk(false)}
+                  />
+                </div>
+              </>
+            )}
+          </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-              <div className="text-xs text-[rgb(var(--muted))]">Snapshot Hash</div>
+              <div className="text-xs text-[rgb(var(--muted))]">スナップショットハッシュ</div>
               <div className="mt-2 text-sm font-semibold break-all">{generation.figma_snapshot_hash ?? "-"}</div>
             </div>
             <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-              <div className="text-xs text-[rgb(var(--muted))]">Output Target</div>
+              <div className="text-xs text-[rgb(var(--muted))]">出力ターゲット</div>
               <div className="mt-2 text-sm font-semibold">{generation.profile.outputTarget}</div>
             </div>
             <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-              <div className="text-xs text-[rgb(var(--muted))]">Mode</div>
+              <div className="text-xs text-[rgb(var(--muted))]">モード</div>
               <div className="mt-2 text-sm font-semibold">{generation.profile.mode}</div>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-[rgb(var(--border))] bg-[rgba(170,90,255,0.08)] p-5">
-            <div className="text-sm font-semibold">Previewについて</div>
-            <div className="p-muted mt-1">
-              現在は Figma の埋め込みを優先し、次に“生成された画像アセット”を表示します。将来的には生成コードを実行して、より正確なUIプレビューに置き換えます。
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-semibold">ライブプレビュー</div>
-              <Button onClick={() => setPreviewWidth(375)} variant={previewWidth === 375 ? "primary" : "secondary"}>
-                モバイル
-              </Button>
-              <Button onClick={() => setPreviewWidth(768)} variant={previewWidth === 768 ? "primary" : "secondary"}>
-                タブレット
-              </Button>
-              <Button onClick={() => setPreviewWidth(1200)} variant={previewWidth === 1200 ? "primary" : "secondary"}>
-                デスクトップ
-              </Button>
-            </div>
-            <div className="mt-3 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-              {isFigmaUrl ? (
-                <div className="grid gap-3">
-                  <div className="overflow-auto rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-4">
-                    <iframe
-                      title="figma-embed-primary"
-                      style={{ width: "100%", height: 640, border: "0", borderRadius: 12, background: "#121218" }}
-                      src={`https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(embedUrl || bundle.project.source_url)}`}
-                      allowFullScreen
-                    />
-                  </div>
-
-                  {previewImage && !preferEmbed ? (
-                    <div className="overflow-auto">
-                      <iframe
-                        title="generated-preview"
-                        sandbox="allow-same-origin"
-                        style={{ width: previewWidth, height: 640, border: "0", borderRadius: 12, background: "#121218" }}
-                        srcDoc={`<!doctype html>
-<html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      html, body { height: 100%; margin: 0; background: #121218; color: #f5f5fa; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif; }
-      .wrap { padding: 24px; }
-      .card { margin-top: 12px; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.02); }
-      img { max-width: 100%; border-radius: 12px; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <div style="font-weight: 600; margin-bottom: 10px;">${isMockFallback ? "モックプレビュー" : "Figmaプレビュー"}</div>
-      <img src="${previewImage.content}" alt="プレビュー" />
-      <div class="card">
-        <div style="opacity: 0.7; font-size: 12px;">ソース</div>
-        <div style="word-break: break-all; margin-top: 6px;">${bundle.project.source_url}</div>
-      </div>
-    </div>
-  </body>
-</html>`}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : previewImage ? (
-                <div className="overflow-auto">
-                  <iframe
-                    title="generated-preview"
-                    sandbox="allow-same-origin"
-                    style={{ width: previewWidth, height: 640, border: "0", borderRadius: 12, background: "#121218" }}
-                    srcDoc={`<!doctype html>
-<html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      html, body { height: 100%; margin: 0; background: #121218; color: #f5f5fa; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif; }
-      .wrap { padding: 24px; }
-      .card { margin-top: 12px; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.02); }
-      img { max-width: 100%; border-radius: 12px; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <div style="font-weight: 600; margin-bottom: 10px;">${isMockFallback ? "モックプレビュー" : "プレビュー"}</div>
-      <img src="${previewImage.content}" alt="プレビュー" />
-      <div class="card">
-        <div style="opacity: 0.7; font-size: 12px;">ソース</div>
-        <div style="word-break: break-all; margin-top: 6px;">${bundle.project.source_url}</div>
-      </div>
-    </div>
-  </body>
-</html>`}
-                  />
-                </div>
-              ) : (
-                <div className="p-muted text-sm">プレビューを表示できません。</div>
-              )}
             </div>
           </div>
         </div>
@@ -197,7 +121,7 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
       {active === "コード" && (
         <div className="grid lg:grid-cols-3">
           <div className="border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
-            <div className="px-4 py-3 text-sm font-semibold border-b border-[rgb(var(--border))]">Files</div>
+            <div className="px-4 py-3 text-sm font-semibold border-b border-[rgb(var(--border))]">ファイル一覧</div>
             <FileTree paths={files.map((f) => f.path)} selected={selectedPath} onSelect={(p) => setSelectedPath(p)} />
           </div>
           <div className="lg:col-span-2 p-6">
@@ -214,37 +138,55 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
         </div>
       )}
 
-      {active === "アセット" && (
-        <div className="p-6">
-          <div className="h2">アセット</div>
-          <p className="p-muted mt-2">Figma から取得した画像アセットを表示します（MVP）。</p>
-          {assetFiles.length === 0 ? (
-            <div className="p-muted mt-4 text-sm">
-              画像アセットはありません。
-              {preferEmbed ? "（429などで取得待ちの場合でも、プレビュータブでFigma埋め込みを即確認できます）" : ""}
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {assetFiles.map((f) => (
-                <div key={f.path} className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-                  <div className="text-xs text-[rgb(var(--muted))] truncate">{f.path}</div>
-                  {f.content.startsWith("data:image/") ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={f.content} alt={f.path} className="mt-3 w-full rounded-lg border border-[rgb(var(--border))]" />
-                  ) : (
-                    <div className="p-muted mt-3 text-xs">プレビュー不可（data URLではありません）。</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {active === "レポート" && (
         <div className="p-6">
-          <div className="h2">品質レポート（仮）</div>
-          <p className="p-muted mt-2">report_json をそのまま表示します（将来はカード/グラフ化）。</p>
+          <div className="h2">品質レポート</div>
+          <p className="p-muted mt-2">
+            report_json を表示します。Token付き生成では「Figma画像 vs 生成レンダリング」の差分（diff）も保存され、ここで確認できます。
+          </p>
+
+          {project?.id && snapshotHash ? (
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+                <div className="text-xs text-[rgb(var(--muted))]">Figma（Storage）</div>
+                <div className="mt-3">
+                  <img
+                    src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}`}
+                    alt="figma"
+                    className="w-full rounded-xl border border-white/10"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+                <div className="text-xs text-[rgb(var(--muted))]">生成レンダリング（IR）</div>
+                <div className="mt-3">
+                  <img
+                    src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_render")}`}
+                    alt="render"
+                    className="w-full rounded-xl border border-white/10"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+                <div className="text-xs text-[rgb(var(--muted))]">diff（差分）</div>
+                <div className="mt-3">
+                  <img
+                    src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_diff")}`}
+                    alt="diff"
+                    className="w-full rounded-xl border border-white/10"
+                  />
+                </div>
+                {typeof (generation.report_json as any)?.visualDiff?.diffRatio === "number" && (
+                  <div className="mt-3 text-xs text-[rgb(var(--muted))]">
+                    diffRatio: {String(((generation.report_json as any).visualDiff.diffRatio * 100).toFixed(2))}%
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-4">
             <CodeBlock code={JSON.stringify(generation.report_json ?? {}, null, 2)} />
           </div>
@@ -253,8 +195,8 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
 
       {active === "マッピング" && (
         <div className="p-6">
-          <div className="h2">マッピング（仮）</div>
-          <p className="p-muted mt-2">Figma node id ↔ 生成ファイル の対応をリスト表示します（将来はツリー連動）。</p>
+          <div className="h2">マッピング</div>
+          <p className="p-muted mt-2">Figma node id ↔ 生成ファイル の対応をリスト表示します。</p>
 
           <div className="mt-4 grid gap-3">
             {mappings.slice(0, 30).map((m) => (

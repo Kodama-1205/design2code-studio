@@ -1,163 +1,37 @@
-import crypto from "crypto";
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import {
-  createOrUpdateProject,
-  createGeneration,
-  saveGenerationArtifacts,
-  setGenerationStatus
-} from "@/lib/db";
-import { runMockPipeline } from "@/lib/mockPipeline";
-import { buildDemoBundle } from "@/lib/demoBundle";
-import { envServer } from "@/lib/envServer";
-import { requireUserIdFromRequest } from "@/lib/authApi";
-
-const BodySchema = z.object({
-  sourceUrl: z.string().min(10),
-  profileId: z.string().uuid().optional(),
-  projectId: z.string().uuid().optional()
-});
-
-export async function POST(req: Request) {
-  let userId: string;
-  try {
-    userId = await requireUserIdFromRequest(req);
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "unauthorized" }, { status: 401 });
-  }
-
-  const json = await req.json().catch(() => null);
-  const parsed = BodySchema.safeParse(json);
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
-  }
-
-  const { sourceUrl, profileId, projectId } = parsed.data;
-
-  const fileKeyMatch =
-    sourceUrl.match(/figma\.com\/file\/([^/]+)/) ??
-    sourceUrl.match(/figma\.com\/design\/([^/]+)/) ??
-    sourceUrl.match(/figma\.com\/proto\/([^/]+)/);
-  const nodeIdMatch = sourceUrl.match(/node-id=([^&]+)/);
-
-  const figmaFileKey = fileKeyMatch?.[1] ?? "UNKNOWN_FILEKEY";
-  const figmaNodeId = nodeIdMatch ? decodeURIComponent(nodeIdMatch[1]).replace("%3A", ":") : "0:0";
-  const normalizedNodeId = figmaNodeId.includes(":") ? figmaNodeId : figmaNodeId.replace(/-/g, ":");
-
-  const projectName = `Project ${figmaFileKey.slice(0, 6)} / ${normalizedNodeId}`;
-
-  let project: { id: string; owner_id: string; name: string; figma_file_key: string; figma_node_id: string; source_url: string } | null = null;
-  let generation: { id: string; project_id: string } | null = null;
-
-  try {
-    project = await createOrUpdateProject({
-      id: projectId,
-      owner_id: userId,
-      name: projectName,
-      figma_file_key: figmaFileKey,
-      figma_node_id: normalizedNodeId,
-      source_url: sourceUrl,
-      default_profile_id: profileId ?? null
-    });
-
-    generation = await createGeneration({
-      project_id: project.id,
-      profile_id: profileId ?? null
-    });
-
-    await setGenerationStatus(generation.id, "running", { started_at: new Date().toISOString() });
-  } catch {
-    // Supabase 無料プラン制限などで DB 保存に失敗 → デモモードでパイプラインのみ実行
-    const tempProjectId = crypto.randomUUID();
-    const tempGenerationId = crypto.randomUUID();
-
-    const artifacts = await runMockPipeline({
-      figmaFileKey,
-      figmaNodeId: normalizedNodeId,
-      sourceUrl,
-      profileOverrideId: profileId ?? undefined,
-      projectId: tempProjectId,
-      generationId: tempGenerationId
-    });
-
-    const bundle = buildDemoBundle(
-      tempProjectId,
-      tempGenerationId,
-      {
-        name: projectName,
-        figma_file_key: figmaFileKey,
-        figma_node_id: normalizedNodeId,
-        source_url: sourceUrl,
-        owner_id: userId
-      },
-      artifacts
-    );
-
-    return NextResponse.json({ saved: false, bundle });
-  }
-
-  try {
-    const artifacts = await runMockPipeline({
-      figmaFileKey,
-      figmaNodeId: normalizedNodeId,
-      sourceUrl,
-      profileOverrideId: profileId ?? undefined,
-      projectId: project!.id,
-      generationId: generation!.id
-    });
-
-    await saveGenerationArtifacts({
-      projectId: project!.id,
-      generationId: generation!.id,
-      profileSnapshot: artifacts.profileSnapshot,
-      irJson: artifacts.ir,
-      reportJson: artifacts.report,
-      files: artifacts.files,
-      mappings: artifacts.mappings,
-      snapshotHash: artifacts.snapshotHash
-    });
-
-    await setGenerationStatus(generation!.id, "succeeded", { finished_at: new Date().toISOString() });
-
-    return NextResponse.json({
-      saved: true,
-      projectId: project!.id,
-      generationId: generation!.id
-    });
-  } catch (e: any) {
-    const artifacts = await runMockPipeline({
-      figmaFileKey,
-      figmaNodeId: normalizedNodeId,
-      sourceUrl,
-      profileOverrideId: profileId ?? undefined,
-      projectId: project!.id,
-      generationId: generation!.id
-    }).catch(() => null);
-
-    if (artifacts) {
-      const bundle = buildDemoBundle(
-        project!.id,
-        generation!.id,
-        {
-          name: projectName,
-          figma_file_key: figmaFileKey,
-          figma_node_id: normalizedNodeId,
-          source_url: sourceUrl,
-          owner_id: (project as any).owner_id ?? envServer.D2C_OWNER_ID
-        },
-        artifacts
-      );
-      return NextResponse.json({ saved: false, bundle });
-    }
-
-    try {
-      await setGenerationStatus(generation!.id, "failed", {
-        finished_at: new Date().toISOString(),
-        error_json: { message: e?.message ?? "Unknown error" }
-      });
-    } catch {}
-
-    return NextResponse.json({ error: "Generation failed", message: e?.message ?? "Unknown error" }, { status: 500 });
+{
+  "name": "design2code-studio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^123.0.0",
+    "@supabase/supabase-js": "^2.45.4",
+    "archiver": "^7.0.1",
+    "clsx": "^2.1.1",
+    "diff": "^5.2.0",
+    "next": "^14.2.35",
+    "pixelmatch": "^5.3.0",
+    "playwright-core": "^1.50.1",
+    "pngjs": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.7.2"
   }
 }
