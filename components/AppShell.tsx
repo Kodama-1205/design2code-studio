@@ -1,40 +1,50 @@
 import Link from "next/link";
+import { ReactNode } from "react";
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+export default function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen">
-      <header className="border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
-        <div className="container-max py-4 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-20 border-b border-[rgb(var(--border))] bg-[rgba(10,10,12,0.85)] backdrop-blur">
+        <div className="container-max py-3 flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-[rgb(var(--primary))] to-[rgb(var(--primary2))] shadow-soft" />
-            <div className="min-w-0">
-              <div className="text-sm font-semibold leading-tight">Design2Code Studio</div>
-              <div className="text-xs text-[rgb(var(--muted))] leading-tight">MVP scaffold</div>
+            <div className="logo-mark" />
+            <div className="leading-tight">
+              <div className="text-sm font-bold">Design2Code Studio</div>
+              <div className="text-xs text-[rgb(var(--muted))]">Figma → Code（MVP）</div>
             </div>
           </Link>
 
           <nav className="flex items-center gap-2">
             <Link
               href="/new"
-              className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-3 py-2 text-sm hover:border-[rgba(170,90,255,0.55)] transition"
+              className={[
+                "btn btn-primary",
+                "px-3 py-2 rounded-xl",
+                "text-sm font-semibold"
+              ].join(" ")}
             >
-              New
+              新規作成
             </Link>
+
             <Link
-              href="/"
-              className="rounded-xl border border-[rgb(var(--border))] bg-transparent px-3 py-2 text-sm hover:bg-[rgba(255,255,255,0.03)] transition"
+              href="/dashboard"
+              className={[
+                "btn btn-secondary",
+                "px-3 py-2 rounded-xl",
+                "text-sm font-semibold"
+              ].join(" ")}
             >
-              Dashboard
+              ダッシュボード
             </Link>
           </nav>
         </div>
       </header>
 
-      <main>{children}</main>
+      <main className="container-max py-10">{children}</main>
 
-      <footer className="border-t border-[rgb(var(--border))] mt-14">
-        <div className="container-max py-6 text-xs text-[rgb(var(--muted))]">
-          This scaffold stores generated files in DB for code view and ZIP export.
+      <footer className="border-t border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
+        <div className="container-max py-8 text-xs text-[rgb(var(--muted))]">
+          © {new Date().getFullYear()} Design2Code Studio（MVP）
         </div>
       </footer>
     </div>

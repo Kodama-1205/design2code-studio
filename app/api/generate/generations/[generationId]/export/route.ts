@@ -63,10 +63,11 @@ async function fetchGenerationRow(
   generationId: string
 ): Promise<{ id: string; project_id: string }> {
   const tableCandidates = [
+    "d2c_generations", // 本番テーブル（db.ts と一致）
     "generations",
     "generation",
     "generation_rows",
-    "demo_generations", // 念のため（demo系を使ってる場合）
+    "demo_generations",
   ];
 
   let lastError: string | null = null;
@@ -98,10 +99,11 @@ async function fetchGenerationRow(
 /** project取得（最低限 id が取れればOK） */
 async function fetchProjectRow(projectId: string): Promise<{ id: string }> {
   const tableCandidates = [
+    "d2c_projects", // 本番テーブル（db.ts と一致）
     "projects",
     "project",
     "project_rows",
-    "demo_projects", // 念のため
+    "demo_projects",
   ];
 
   let lastError: string | null = null;
@@ -131,10 +133,11 @@ async function fetchProjectRow(projectId: string): Promise<{ id: string }> {
 /** files取得（path/content） */
 async function fetchGenerationFiles(generationId: string): Promise<ZipFile[]> {
   const tableCandidates = [
+    "d2c_files", // 本番テーブル（db.ts と一致）
     "files",
     "generation_files",
     "generated_files",
-    "demo_files", // 念のため
+    "demo_files",
   ];
 
   let lastError: string | null = null;

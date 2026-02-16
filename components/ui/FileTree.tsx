@@ -3,6 +3,11 @@
 import { useMemo } from "react";
 import { clsx } from "clsx";
 
+/**
+ * オレンジ系テーマ対応
+ * - 選択状態の背景（紫の直書き）を CSS 変数（--accent）に置換
+ * - レイアウト/構造は一切変更しない
+ */
 function buildTree(paths: string[]) {
   type Node = { name: string; path: string; children: Map<string, Node>; isFile: boolean };
   const root: Node = { name: "", path: "", children: new Map(), isFile: false };
@@ -54,7 +59,8 @@ export default function FileTree({
             className={clsx(
               "w-full text-left px-3 py-2 text-sm flex items-center gap-2 border-b border-[rgba(255,255,255,0.03)]",
               node.isFile ? "hover:bg-[rgba(255,255,255,0.03)]" : "opacity-80",
-              selected === node.path && "bg-[rgba(170,90,255,0.10)]"
+              // 選択中：オレンジアクセントに統一
+              selected === node.path && "bg-[rgba(var(--accent),0.10)]"
             )}
             style={{ paddingLeft: 12 + depth * 12 }}
             disabled={!node.isFile}
@@ -64,6 +70,7 @@ export default function FileTree({
           </button>
         )}
         {children.map((c) => render(c, depth + 1))}
+
       </div>
     );
   }

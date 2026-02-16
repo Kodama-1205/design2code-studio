@@ -1,81 +1,76 @@
-import { listProjects } from "@/lib/db";
 import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
-import EmptyState from "@/components/EmptyState";
 
 export default async function Page() {
-  let projects: Awaited<ReturnType<typeof listProjects>> = [];
-  let saveDisabled = false;
-
-  try {
-    projects = await listProjects();
-  } catch {
-    saveDisabled = true;
-  }
-
   return (
     <div className="container-max py-10">
-      {saveDisabled && (
-        <div className="mb-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-          <strong>保存機能は現在ご利用いただけません。</strong> Supabase が無料プランまたは接続制限のため、プロジェクト一覧の取得に失敗しています。New Generation ではコード生成・プレビュー・ZIP出力までお試し頂けます。2月2日以降のプロプランアップグレードで保存が有効になります。
-        </div>
-      )}
+      <div>
+        <h1 className="h1">Design2Code Studio</h1>
+        <p className="p-muted mt-2">
+          Figma URL からコードを生成し、プレビュー・コード確認・ZIP出力まで行うデモ実装（MVP骨組み）です。
+          保存済みの生成結果一覧は「ダッシュボード」に集約します。
+        </p>
+      </div>
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="h1">Design2Code Studio</h1>
-          <p className="p-muted mt-2">
-            Figma URL からコードを生成し、プレビュー・差分・ZIP出力まで行うデモ実装（MVP骨組み）です。
+      <Card className="p-6 mt-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="h2">取扱説明（使い方）</div>
+            <p className="p-muted mt-2">
+              本アプリは、Figma のURLを入力してコード生成（現状はモック）→ 結果確認 → ZIP出力 を行います。
+              保存が有効な場合は、生成結果がダッシュボードに保存されます。
+            </p>
+          </div>
+          <span className="badge">MVP</span>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[rgb(var(--border))] bg-[rgba(var(--accent),0.08)] p-4">
+          <div className="text-sm font-semibold">プレビュー画像（サムネイル）について</div>
+          <p className="p-muted mt-2 text-sm">
+            Figma のプレビュー画像URLは <span className="font-semibold text-[rgb(var(--text))]">最大30日で失効</span> します。
+            画像が表示されない場合は、ダッシュボードから「再生成」または「再取得」で最新の画像を取得してください。
           </p>
         </div>
-        <Button href="/new" variant="primary">
-          New Generation
-        </Button>
-      </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {projects.length === 0 ? (
-          <div className="sm:col-span-2 lg:col-span-3">
-            <EmptyState
-              title="まだプロジェクトがありません"
-              description={saveDisabled
-                ? "上記の通り保存は無効です。New Generation から Figma URL を貼り付けて生成すると、結果の確認とZIP出力ができます。"
-                : "New Generation からFigma URLを貼り付けて生成してください。"}
-              actionHref="/new"
-              actionLabel="New Generation"
-            />
+        <div className="mt-5 grid gap-3">
+          <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+            <div className="text-sm font-semibold">① 生成する</div>
+            <div className="p-muted mt-1 text-sm">
+              右上の「新規作成」へ進み、Figma の Frame URL（node-id 付き推奨）を貼り付けて「生成」を押します。
+            </div>
+            <div className="p-muted mt-2 text-xs">
+              例：<code>https://www.figma.com/design/XXX/YYY?node-id=12%3A345</code>
+            </div>
           </div>
-        ) : (
-          projects.map((p) => (
-            <Card key={p.id} className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-base font-semibold truncate">{p.name}</div>
-                  <div className="p-muted mt-1 truncate">{p.source_url}</div>
-                </div>
-                <span className="badge">Figma</span>
-              </div>
 
-              <div className="mt-4 text-xs text-[rgb(var(--muted))]">
-                <div>FileKey: {p.figma_file_key}</div>
-                <div>NodeId: {p.figma_node_id}</div>
-              </div>
+          <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+            <div className="text-sm font-semibold">② 結果を見る</div>
+            <div className="p-muted mt-1 text-sm">
+              生成が完了すると、結果ページで「プレビュー / コード / レポート / マッピング」を確認できます。
+            </div>
+          </div>
 
-              <div className="mt-5 flex gap-2">
-                <Button href={`/new?projectId=${p.id}`} variant="ghost">
-                  Regenerate
-                </Button>
-                <Button
-                  href={p.last_generation_id ? `/projects/${p.id}/generations/${p.last_generation_id}` : `/new?projectId=${p.id}`}
-                  variant="secondary"
-                >
-                  Open
-                </Button>
-              </div>
-            </Card>
-          ))
-        )}
-      </div>
+          <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+            <div className="text-sm font-semibold">③ ZIP出力する</div>
+            <div className="p-muted mt-1 text-sm">
+              結果ページの「ZIP出力」から、生成ファイル一式をまとめてダウンロードできます。
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgba(var(--accent),0.08)] p-4">
+            <div className="text-sm font-semibold">よくあるエラー</div>
+            <ul className="mt-2 space-y-2 text-sm text-[rgb(var(--muted))]">
+              <li>
+                <span className="text-[rgb(var(--text))] font-semibold">Generate failed</span>：
+                Supabase の環境変数（URL / Secret key / Owner ID）が未設定、またはDBテーブル未作成の可能性があります。
+              </li>
+              <li>
+                <span className="text-[rgb(var(--text))] font-semibold">URL解析がうまくいかない</span>：
+                Figma URL は <code>/file/</code> と <code>/design/</code> の両形式があります。最新版コードを使用してください。
+              </li>
+            </ul>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

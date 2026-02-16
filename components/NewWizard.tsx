@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 
@@ -8,28 +8,62 @@ type Mode = "production" | "lecture" | "pixel";
 type OutputTarget = "nextjs_tailwind" | "static_html_css";
 
 const PRESETS: Array<{
-  id: string;
+  id: Mode;
   label: string;
   mode: Mode;
   outputTarget: OutputTarget;
   description: string;
 }> = [
-  { id: "prod_next", label: "Production Mode", mode: "production", outputTarget: "nextjs_tailwind", description: "実務寄り。トークン化/分割を前提。" },
-  { id: "lecture_static", label: "Lecture Mode", mode: "lecture", outputTarget: "static_html_css", description: "授業向け。読みやすさ優先の静的出力。" },
-  { id: "pixel_static", label: "Pixel Mode", mode: "pixel", outputTarget: "static_html_css", description: "見た目優先。absolute許容（将来拡張）。" }
+  {
+    id: "production",
+    label: "Production Mode",
+    mode: "production",
+    outputTarget: "nextjs_tailwind",
+    description: "実務寄り。トークン/分割を前提。"
+  },
+  {
+    id: "lecture",
+    label: "Lecture Mode",
+    mode: "lecture",
+    outputTarget: "static_html_css",
+    description: "授業向け。読みやすさ優先の静的出力。"
+  },
+  {
+    id: "pixel",
+    label: "Pixel Mode",
+    mode: "pixel",
+    outputTarget: "static_html_css",
+    description: "見た目優先。absolute許容（将来拡張）。"
+  }
 ];
 
-export default function NewWizard({ projectId }: { projectId?: string }) {
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [presetId, setPresetId] = useState(PRESETS[0].id);
+export default function NewWizard({
+  projectId,
+  sourceUrl: initialSourceUrl
+}: {
+  projectId?: string;
+  sourceUrl?: string;
+}) {
+  const [sourceUrl, setSourceUrl] = useState(initialSourceUrl ?? "");
+  const [presetId, setPresetId] = useState<Mode>(PRESETS[0].id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [figmaToken, setFigmaToken] = useState<string>("");
 
-  const preset = useMemo(() => PRESETS.find((p) => p.id === presetId)!, [presetId]);
+  // ダッシュボードから再生成リンクで来たときにクエリの sourceUrl を反映
+  useEffect(() => {
+    if (typeof initialSourceUrl === "string" && initialSourceUrl.trim()) {
+      setSourceUrl(initialSourceUrl.trim());
+    }
+  }, [initialSourceUrl]);
+
+  const selectedPreset = useMemo(() => PRESETS.find((p) => p.id === presetId)!, [presetId]);
 
   async function onGenerate() {
     setBusy(true);
     setError(null);
+    setWarnings([]);
 
     try {
       const res = await fetch("/api/generate", {
@@ -38,75 +72,109 @@ export default function NewWizard({ projectId }: { projectId?: string }) {
         body: JSON.stringify({
           sourceUrl,
           projectId,
-          // For MVP: profileId is optional. We pass nothing and store snapshot in generation.
-          // Later you will map these presets to d2c_profiles rows.
-          profileId: undefined
+          // ✅ ここが実体：プリセット選択をサーバへ渡す
+          presetId,
+          // ✅ 任意：Figma Token（入力されているときだけ送る）
+          ...(figmaToken.trim() ? { figmaToken: figmaToken.trim() } : {})
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message ?? "Generate failed");
+      const data = await res.json().catch(() => ({} as any));
 
-      if (data.saved === false && data.bundle) {
-        sessionStorage.setItem("d2c_demo_bundle", JSON.stringify(data.bundle));
-        window.location.href = "/result";
+      // warnings をUIに反映（成功/失敗どちらでもあり得る）
+      if (Array.isArray(data?.warnings) && data.warnings.every((x: any) => typeof x === "string")) {
+        setWarnings(data.warnings);
+      }
+
+      if (!res.ok) {
+        const detail =
+          typeof data?.message === "string"
+            ? data.message
+            : typeof data?.error === "string"
+            ? data.error
+            : "不明なエラー";
+        setError(detail);
         return;
       }
 
-      window.location.href = `/projects/${data.projectId}/generations/${data.generationId}`;
+      // 生成結果へ遷移
+      if (typeof data?.projectId === "string" && typeof data?.generationId === "string") {
+        window.location.href = `/projects/${data.projectId}/generations/${data.generationId}`;
+        return;
+      }
+
+      setError("生成結果の取得に失敗しました（projectId/generationId が不正です）。");
     } catch (e: any) {
-      setError(e?.message ?? "Unknown error");
+      setError(e?.message ?? "通信に失敗しました。");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="lg:col-span-2">
+    <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
+      <div>
         <Card className="p-6">
-          <h1 className="h1">New Generation</h1>
+          <div className="h2">新規作成</div>
           <p className="p-muted mt-2">
-            Figma URL を貼り付けて Generate。現時点はモックパイプラインで、DB保存・結果画面・ZIP出力の骨組みを提供します。
+            Figma のURLを入力して生成します。プリセットは生成プロファイルとしてDBに保存され、次回以降も同じ設定で生成できます。
           </p>
 
-          <div className="mt-6">
-            <label className="block text-sm font-semibold">Source (Figma URL)</label>
-            <input
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              placeholder="https://www.figma.com/file/XXX/YYY?node-id=12%3A345"
-              className="mt-2 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none focus:border-[rgba(170,90,255,0.75)]"
-            />
-            <div className="p-muted mt-2">node-id が付いたFrame URL推奨（無い場合も動きますが精度の前提を置けません）。</div>
-          </div>
-
-          {error && (
-            <div className="mt-4 rounded-xl border border-[rgba(255,80,80,0.4)] bg-[rgba(255,80,80,0.08)] px-4 py-3 text-sm">
-              {error}
+          <div className="mt-5 grid gap-3">
+            <div>
+              <div className="text-sm font-medium">Figma URL</div>
+              <input
+                className="input mt-2"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="https://www.figma.com/file/... または /design/..."
+              />
             </div>
-          )}
 
-          <div className="mt-6 flex gap-2">
-            <Button
-              onClick={onGenerate}
-              disabled={busy || sourceUrl.trim().length < 10}
-              variant="primary"
-            >
-              {busy ? "Generating..." : "Generate"}
-            </Button>
-            <Button href="/" variant="secondary">
-              Cancel
-            </Button>
+            <div>
+              <div className="text-sm font-medium">Figma Token（任意）</div>
+              <input
+                className="input mt-2"
+                value={figmaToken}
+                onChange={(e) => setFigmaToken(e.target.value)}
+                placeholder="Personal Access Token（Images APIのプレビュー取得に使用）"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {error}
+              </div>
+            )}
+
+            {warnings.length > 0 && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                <div className="font-semibold">注意</div>
+                <ul className="mt-2 list-disc pl-5">
+                  {warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-2 flex gap-2">
+              <Button onClick={onGenerate} variant="primary" disabled={busy}>
+                {busy ? "生成中..." : "生成する"}
+              </Button>
+              <Button href="/" variant="secondary">
+                キャンセル
+              </Button>
+            </div>
           </div>
         </Card>
       </div>
 
       <div>
         <Card className="p-6">
-          <div className="h2">Quality Preset (demo)</div>
+          <div className="h2">品質プリセット</div>
           <p className="p-muted mt-2">
-            本MVPではDBのProfileテーブル連携は後回しにし、まず“体験”が回ることを優先しています。
+            ここで選んだプリセットは、サーバ側で <code>d2c_profiles</code> に自動作成（または再利用）され、生成に紐付きます。
           </p>
 
           <div className="mt-4 grid gap-2">
@@ -115,18 +183,13 @@ export default function NewWizard({ projectId }: { projectId?: string }) {
                 key={p.id}
                 className={`cursor-pointer rounded-xl border px-4 py-3 transition ${
                   presetId === p.id
-                    ? "border-[rgba(170,90,255,0.75)] bg-[rgba(170,90,255,0.10)]"
-                    : "border-[rgb(var(--border))] bg-[rgb(var(--surface2))] hover:border-[rgba(170,90,255,0.45)]"
+                    ? "border-[rgba(var(--accent),0.75)] bg-[rgba(var(--accent),0.10)]"
+                    : "border-[rgb(var(--border))] bg-[rgb(var(--surface2))] hover:border-[rgba(var(--accent),0.45)]"
                 }`}
               >
-                <input
-                  type="radio"
-                  className="hidden"
-                  checked={presetId === p.id}
-                  onChange={() => setPresetId(p.id)}
-                />
+                <input type="radio" className="hidden" checked={presetId === p.id} onChange={() => setPresetId(p.id)} />
                 <div className="text-sm font-semibold">{p.label}</div>
-                <div className="text-xs text-[rgb(var(--muted))] mt-1">{p.description}</div>
+                <div className="p-muted mt-1 text-xs">{p.description}</div>
                 <div className="mt-2 flex gap-2">
                   <span className="badge">{p.mode}</span>
                   <span className="badge">{p.outputTarget}</span>
@@ -135,9 +198,9 @@ export default function NewWizard({ projectId }: { projectId?: string }) {
             ))}
           </div>
 
-          <div className="mt-5 text-xs text-[rgb(var(--muted))]">
-            次の実装で、このプリセットを <code>d2c_profiles</code> に紐付け、UIから選択→生成に反映します。
-          </div>
+          <p className="p-muted mt-4 text-xs">
+            選択中：<span className="font-semibold">{selectedPreset.label}</span>
+          </p>
         </Card>
       </div>
     </div>

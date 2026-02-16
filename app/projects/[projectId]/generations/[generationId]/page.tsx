@@ -1,7 +1,7 @@
 import ResultTabs from "@/components/ResultTabs";
 import { getGenerationBundle } from "@/lib/db";
-import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import GenerationActions from "@/components/GenerationActions";
 
 export default async function Page({
   params
@@ -17,9 +17,9 @@ export default async function Page({
           <div className="h2">Generation not found</div>
           <p className="p-muted mt-2">指定の generationId が見つかりませんでした。</p>
           <div className="mt-4">
-            <Button href="/" variant="secondary">
-              Back to Dashboard
-            </Button>
+            <a className="text-sm underline text-[rgb(var(--muted))]" href="/dashboard">
+              ダッシュボードへ戻る
+            </a>
           </div>
         </Card>
       </div>
@@ -41,16 +41,12 @@ export default async function Page({
           <p className="p-muted mt-2 truncate">{project.source_url}</p>
         </div>
 
-        <div className="flex gap-2">
-          <Button href={`/api/generate/generations/${generation.id}/export`} variant="secondary">
-            Export ZIP
-          </Button>
-          <form action={`/api/generate/generations/${generation.id}/regenerate`} method="post">
-            <Button type="submit" variant="primary">
-              Regenerate
-            </Button>
-          </form>
-        </div>
+        <GenerationActions
+          projectId={project.id}
+          sourceUrl={project.source_url}
+          files={bundle.files.map((f) => ({ path: f.path, content: f.content }))}
+          filename={`${project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.zip`}
+        />
       </div>
 
       <div className="mt-6">

@@ -1,48 +1,203 @@
+/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg: 10 10 14;
-  --surface: 18 18 24;
-  --surface2: 26 26 36;
-  --text: 245 245 250;
-  --muted: 170 170 185;
-  --border: 52 52 70;
-  --primary: 170 90 255;  /* purple */
-  --primary2: 120 90 255;
+/* =========================================================
+   Design2Code Studio - Orange Theme (CSS Variables)
+   - 既存の className（rgb(var(--border)) 等）を壊さないため、
+     変数名はそのまま維持してオレンジ系に統一しています。
+   ========================================================= */
+
+/* -------------------------
+   Base theme tokens
+   ------------------------- */
+@layer base {
+  :root {
+    /* Surfaces / borders (RGB triplets) */
+    --bg: 16 16 22;
+    --surface: 22 22 30;
+    --surface2: 26 26 36;
+    --border: 62 62 86;
+
+    /* Text */
+    --text: 246 246 250;
+    --muted: 168 168 188;
+
+    /* Orange accents */
+    --accent: 255 132 61;  /* main orange */
+    --accent2: 255 186 73; /* warm highlight */
+    --accent3: 255 97 38;  /* stronger orange */
+
+    /* 互換エイリアス（既存コードが --primary / --primary2 を参照してもオレンジになるように） */
+    --primary: var(--accent);
+    --primary2: var(--accent2);
+
+    /* State colors */
+    --success: 76 217 100;
+    --danger: 255 80 80;
+    --warning: 255 186 73;
+
+    /* Shadow/glow base */
+    --glow: 255 132 61;
+
+    color-scheme: dark;
+  }
+
+  /* Light mode を使う場合も崩れないように一応用意（現状はダーク基調のままでOK） */
+  .light,
+  [data-theme="light"] {
+    --bg: 250 250 252;
+    --surface: 255 255 255;
+    --surface2: 246 246 250;
+    --border: 220 220 232;
+
+    --text: 16 16 22;
+    --muted: 90 90 110;
+
+    --accent: 255 132 61;
+    --accent2: 255 186 73;
+    --accent3: 255 97 38;
+
+    /* 互換エイリアス */
+    --primary: var(--accent);
+    --primary2: var(--accent2);
+
+    --success: 18 160 70;
+    --danger: 220 60 60;
+    --warning: 220 140 40;
+
+    --glow: 255 132 61;
+
+    color-scheme: light;
+  }
+
+  /* Dark mode（明示クラス運用の場合） */
+  .dark,
+  [data-theme="dark"] {
+    --bg: 12 12 18;
+    --surface: 18 18 26;
+    --surface2: 22 22 34;
+    --border: 54 54 78;
+
+    --text: 246 246 250;
+    --muted: 160 160 180;
+
+    --accent: 255 132 61;
+    --accent2: 255 186 73;
+    --accent3: 255 97 38;
+
+    /* 互換エイリアス */
+    --primary: var(--accent);
+    --primary2: var(--accent2);
+
+    --success: 76 217 100;
+    --danger: 255 80 80;
+    --warning: 255 186 73;
+
+    --glow: 255 132 61;
+
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: rgb(var(--text));
+    background:
+      radial-gradient(1200px 600px at 12% 8%, rgba(var(--accent2), 0.18), transparent 60%),
+      radial-gradient(900px 520px at 88% 18%, rgba(var(--accent), 0.14), transparent 55%),
+      radial-gradient(1000px 700px at 45% 112%, rgba(var(--accent3), 0.10), transparent 65%),
+      rgb(var(--bg));
+  }
+
+  * {
+    border-color: rgb(var(--border));
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: rgba(var(--accent), 0.28);
+  }
 }
 
-* { box-sizing: border-box; }
+/* -------------------------
+   Component-level helpers
+   ------------------------- */
+@layer components {
+  .container-max {
+    @apply mx-auto w-full max-w-6xl px-4;
+  }
 
-html, body {
-  height: 100%;
-  background: rgb(var(--bg));
-  color: rgb(var(--text));
+  .h1 {
+    @apply text-2xl sm:text-3xl font-semibold tracking-tight;
+  }
+
+  .h2 {
+    @apply text-lg sm:text-xl font-semibold tracking-tight;
+  }
+
+  .p-muted {
+    color: rgb(var(--muted));
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium;
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(var(--border), 0.85);
+    color: rgba(var(--text), 0.85);
+  }
+
+  .card-surface {
+    @apply rounded-2xl border;
+    background: rgb(var(--surface2));
+    border-color: rgba(var(--border), 0.85);
+  }
+
+  .soft-shadow {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04),
+      0 18px 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .accent-ring {
+    box-shadow:
+      0 0 0 1px rgba(var(--accent), 0.35),
+      0 0 0 6px rgba(var(--accent), 0.10);
+  }
 }
 
-a { color: inherit; text-decoration: none; }
+/* -------------------------
+   Utilities (optional)
+   ------------------------- */
+@layer utilities {
+  .text-muted {
+    color: rgb(var(--muted));
+  }
 
-::selection {
-  background: rgba(170,90,255,0.35);
-}
+  .bg-surface {
+    background: rgb(var(--surface));
+  }
 
-.container-max {
-  @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
-}
+  .bg-surface2 {
+    background: rgb(var(--surface2));
+  }
 
-.h1 {
-  @apply text-2xl sm:text-3xl font-semibold tracking-tight;
-}
+  .border-default {
+    border-color: rgb(var(--border));
+  }
 
-.h2 {
-  @apply text-lg font-semibold;
-}
-
-.p-muted {
-  @apply text-sm text-[rgb(var(--muted))];
-}
-
-.badge {
-  @apply inline-flex items-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-2 py-0.5 text-xs text-[rgb(var(--muted))];
+  .glow-accent {
+    box-shadow:
+      0 0 0 1px rgba(var(--accent), 0.35),
+      0 18px 50px rgba(var(--glow), 0.12);
+  }
 }
