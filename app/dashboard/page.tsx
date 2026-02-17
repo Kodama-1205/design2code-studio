@@ -4,9 +4,11 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/EmptyState";
 import DeleteProjectButton from "@/components/DeleteProjectButton";
 import GenerationActions from "@/components/GenerationActions";
+import ProjectThumbnail from "@/components/ProjectThumbnail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0; // 常に最新データを取得（キャッシュ無効化）
 
 export default async function DashboardPage() {
   const projects = await listProjects();
@@ -32,7 +34,21 @@ export default async function DashboardPage() {
           {projects.map((p) => (
             <Card key={p.id} className="p-5">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                {/* 確認用サムネイル（Storage にプレビューがある場合表示；取得失敗時は「画像なし」） */}
+                {p.last_snapshot_hash ? (
+                  <ProjectThumbnail
+                    src={`/api/previews/${encodeURIComponent(p.id)}/${encodeURIComponent(p.last_snapshot_hash)}`}
+                    href={p.last_generation_id ? `/projects/${p.id}/generations/${p.last_generation_id}` : `/projects/${p.id}`}
+                  />
+                ) : (
+                  <div
+                    className="shrink-0 rounded border border-[rgb(var(--border))] bg-[rgb(var(--muted))]/10 flex items-center justify-center text-[10px] text-[rgb(var(--muted))]"
+                    style={{ width: 72, height: 54 }}
+                  >
+                    画像なし
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold truncate">{p.name}</div>
                   <div className="mt-1 text-xs text-[rgb(var(--muted))] truncate">{p.source_url}</div>
                   <div className="mt-3 text-xs text-[rgb(var(--muted))] space-y-1">
@@ -41,11 +57,11 @@ export default async function DashboardPage() {
                   </div>
                 </div>
 
-                <span className="badge">Figma</span>
+                <span className="badge shrink-0">Figma</span>
               </div>
 
               <div className="mt-4 flex items-center justify-between">
-                <GenerationActions project={p} />
+                <GenerationActions projectId={p.id} sourceUrl={p.source_url} />
 
                 <div className="flex items-center gap-2">
                   <Link

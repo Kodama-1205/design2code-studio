@@ -53,7 +53,10 @@ async function savePreviewIfPossible(params: {
   token: string;
 }): Promise<void> {
   const supabase = getSupabaseAdmin();
-  if (!supabase) return;
+  if (!supabase) {
+    console.warn("[savePreviewIfPossible] Supabase が未設定のため、プレビュー画像は保存されません");
+    return;
+  }
 
   try {
     const imageUrl = await fetchFigmaImageUrl({
@@ -63,15 +66,24 @@ async function savePreviewIfPossible(params: {
       scale: 2,
     });
     const imgRes = await fetch(imageUrl, { cache: "no-store" });
-    if (!imgRes.ok) return;
+    if (!imgRes.ok) {
+      console.warn(`[savePreviewIfPossible] Figma 画像の取得に失敗: ${imgRes.status} ${imgRes.statusText}`);
+      return;
+    }
     const buf = Buffer.from(await imgRes.arrayBuffer());
     const path = `${params.projectId}/${params.snapshotHash}.png`;
-    await supabase.storage.from("d2c-previews").upload(path, buf, {
+    const { error: uploadError } = await supabase.storage.from("d2c-previews").upload(path, buf, {
       contentType: "image/png",
       upsert: true,
     });
-  } catch {
-    // プレビュー取得失敗は無視
+    if (uploadError) {
+      console.error(`[savePreviewIfPossible] Storage へのアップロードに失敗: ${uploadError.message}`);
+    } else {
+      console.log(`[savePreviewIfPossible] プレビュー画像を保存しました: ${path}`);
+    }
+  } catch (e) {
+    // プレビュー取得失敗は無視（ただしログは残す）
+    console.error("[savePreviewIfPossible] プレビュー保存中にエラー:", e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -104,8 +116,17 @@ export async function POST(req: Request) {
     const serverEnv = getServerEnvOrNull();
     const supabase = getSupabaseAdmin();
 
+    // デバッグ: 環境変数の読み込み状況を確認
+    if (!serverEnv) {
+      console.warn("[generate] serverEnv is null - 環境変数が未設定の可能性があります");
+    }
+    if (!supabase) {
+      console.warn("[generate] supabase is null - Supabase クライアントが生成できませんでした");
+    }
+
     if (serverEnv && supabase) {
       try {
+        console.log("[generate] 保存モード: プロジェクトと generation を DB に保存します");
         let projectName = projectNameFromFileKey(fileKey);
         let effectiveProjectId: string | undefined = projectId;
         if (projectId) {
@@ -118,6 +139,7 @@ export async function POST(req: Request) {
           }
         }
 
+        console.log("[generate] プロジェクトを作成/更新中...");
         const project = await createOrUpdateProject({
           id: effectiveProjectId,
           name: projectName,
@@ -127,15 +149,18 @@ export async function POST(req: Request) {
           default_profile_id: null,
         });
 
+        console.log(`[generate] プロジェクト保存完了: ${project.id}`);
         const generation = await createGeneration({
           project_id: project.id,
           profile_id: null,
         });
+        console.log(`[generate] Generation 作成完了: ${generation.id}`);
 
         await setGenerationStatus(generation.id, "running", {
           started_at: new Date().toISOString(),
         });
 
+        console.log("[generate] パイプライン実行中...");
         const artifacts = await runMockPipeline({
           figmaFileKey: fileKey,
           figmaNodeId: nodeId,
@@ -144,16 +169,24 @@ export async function POST(req: Request) {
           generationId: generation.id,
         });
 
+        // ✅ プレビュー画像の保存は Token があれば実行（失敗してもプロジェクト保存は続行）
         if (figmaToken) {
-          await savePreviewIfPossible({
-            projectId: project.id,
-            snapshotHash: artifacts.snapshotHash,
-            fileKey,
-            nodeId,
-            token: figmaToken,
-          });
+          try {
+            await savePreviewIfPossible({
+              projectId: project.id,
+              snapshotHash: artifacts.snapshotHash,
+              fileKey,
+              nodeId,
+              token: figmaToken,
+            });
+          } catch (previewError) {
+            // プレビュー保存失敗は無視（プロジェクト保存は続行）
+            console.warn("[generate] プレビュー画像の保存に失敗しましたが、プロジェクト保存は続行します:", previewError);
+          }
         }
 
+        // ✅ プロジェクト・generation の保存は Token 不要で必ず実行
+        console.log("[generate] 生成結果を保存中...");
         await saveGenerationArtifacts({
           projectId: project.id,
           generationId: generation.id,
@@ -164,11 +197,13 @@ export async function POST(req: Request) {
           mappings: artifacts.mappings,
           snapshotHash: artifacts.snapshotHash,
         });
+        console.log("[generate] 生成結果の保存完了");
 
         await setGenerationStatus(generation.id, "succeeded", {
           finished_at: new Date().toISOString(),
         });
 
+        console.log(`[generate] 保存完了: projectId=${project.id}, generationId=${generation.id}`);
         const out: SavedResponse = {
           saved: true,
           projectId: project.id,
@@ -177,8 +212,14 @@ export async function POST(req: Request) {
         return NextResponse.json(out, { status: 200 });
       } catch (saveError: unknown) {
         const msg = saveError instanceof Error ? saveError.message : "保存中にエラーが発生しました。";
+        // ネットワーク／接続系のエラーは原因が分かりやすいよう補足を付ける
+        const isNetworkError =
+          /fetch failed|Failed to fetch|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network/i.test(msg);
+        const displayMessage = isNetworkError
+          ? `保存に失敗しました: ${msg}（Supabase の URL・キーおよびサーバーからの接続を確認してください）`
+          : `保存に失敗しました: ${msg}`;
         return NextResponse.json<ErrorResponse>(
-          { message: `保存に失敗しました: ${msg}`, error: msg },
+          { message: displayMessage, error: msg },
           { status: 500 }
         );
       }

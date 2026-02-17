@@ -100,37 +100,65 @@ export async function getProject(projectId: string): Promise<ProjectRow | null> 
 
 /**
  * ✅ ダッシュボード用：プロジェクト一覧（owner_idで絞る）
- * - 各プロジェクトの最新 generation_id を付与
+ * - 各プロジェクトの最新 generation_id と figma_snapshot_hash を付与（サムネイル表示用）
  * - Supabase 未設定時は空配列を返し、ダッシュボードは「保存されたプロジェクトがありません」を表示
  */
 export async function listProjects(): Promise<
-  Array<ProjectRow & { last_generation_id: string | null }>
+  Array<ProjectRow & { last_generation_id: string | null; last_snapshot_hash: string | null }>
 > {
   const serverEnv = getServerEnvOrNull();
   const supabaseAdmin = getSupabaseAdmin();
   if (!serverEnv || !supabaseAdmin) {
+    console.warn("[listProjects] serverEnv または supabaseAdmin が null のため、空配列を返します");
     return [];
   }
 
+  console.log(`[listProjects] owner_id で検索: ${serverEnv.D2C_OWNER_ID}`);
+  
+  // デバッグ: まず全プロジェクトを取得して owner_id を確認
+  const { data: allProjects } = await supabaseAdmin
+    .from("d2c_projects")
+    .select("id, owner_id, name")
+    .limit(10);
+  console.log(`[listProjects] 全プロジェクト数（最大10件）: ${allProjects?.length ?? 0}`);
+  if (allProjects && allProjects.length > 0) {
+    console.log(`[listProjects] 全プロジェクトの owner_id 一覧:`, allProjects.map(p => ({ id: p.id, owner_id: p.owner_id, name: p.name })));
+  }
+  
   const { data: projects, error } = await supabaseAdmin
     .from("d2c_projects")
     .select("*")
     .eq("owner_id", serverEnv.D2C_OWNER_ID)
     .order("updated_at", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error(`[listProjects] クエリエラー: ${error.message}`);
+    throw new Error(error.message);
+  }
 
-  const results: Array<ProjectRow & { last_generation_id: string | null }> = [];
+  console.log(`[listProjects] 取得したプロジェクト数: ${projects?.length ?? 0}`);
+  if (projects && projects.length > 0) {
+    console.log(`[listProjects] 最初のプロジェクトの owner_id: ${(projects[0] as any).owner_id}`);
+  } else {
+    console.warn(`[listProjects] プロジェクトが見つかりません。owner_id の一致を確認してください。`);
+  }
+
+  const results: Array<ProjectRow & { last_generation_id: string | null; last_snapshot_hash: string | null }> = [];
 
   for (const p of projects ?? []) {
     const { data: gens } = await supabaseAdmin
       .from("d2c_generations")
-      .select("id,created_at")
+      .select("id, figma_snapshot_hash")
       .eq("project_id", p.id)
       .order("created_at", { ascending: false })
       .limit(1);
 
-    results.push({ ...(p as ProjectRow), last_generation_id: gens?.[0]?.id ?? null });
+    const last = gens?.[0];
+    results.push({
+      ...(p as ProjectRow),
+      last_generation_id: last?.id ?? null,
+      last_snapshot_hash: last?.figma_snapshot_hash ?? null,
+    });
   }
 
   return results;
@@ -174,6 +202,7 @@ export async function createOrUpdateProject(input: {
     return data as ProjectRow;
   }
 
+  console.log(`[createOrUpdateProject] 新規プロジェクト作成: owner_id=${serverEnv.D2C_OWNER_ID}, name=${input.name}`);
   const { data, error } = await supabaseAdmin
     .from("d2c_projects")
     .insert({
@@ -183,12 +212,39 @@ export async function createOrUpdateProject(input: {
       figma_node_id: input.figma_node_id,
       source_url: input.source_url,
       default_profile_id: input.default_profile_id,
+      created_at: now,
       updated_at: now,
     })
     .select("*")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error(`[createOrUpdateProject] エラー: ${error.message}`, error);
+    throw new Error(error.message);
+  }
+  
+  if (!data) {
+    console.error(`[createOrUpdateProject] データが返されませんでした`);
+    throw new Error("プロジェクト作成後にデータが取得できませんでした");
+  }
+  
+  console.log(`[createOrUpdateProject] プロジェクト作成成功: id=${(data as ProjectRow).id}, owner_id=${(data as ProjectRow).owner_id}`);
+  
+  // デバッグ: 保存直後に取得して確認
+  const { data: verifyData, error: verifyError } = await supabaseAdmin
+    .from("d2c_projects")
+    .select("*")
+    .eq("id", (data as ProjectRow).id)
+    .single();
+  
+  if (verifyError) {
+    console.error(`[createOrUpdateProject] 保存後の確認でエラー: ${verifyError.message}`);
+  } else if (!verifyData) {
+    console.error(`[createOrUpdateProject] 保存後の確認でデータが見つかりません`);
+  } else {
+    console.log(`[createOrUpdateProject] 保存後の確認成功: owner_id=${(verifyData as ProjectRow).owner_id}`);
+  }
+  
   return data as ProjectRow;
 }
 

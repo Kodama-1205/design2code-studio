@@ -12,10 +12,11 @@ import Button from "@/components/ui/Button";
 export default function GenerationActions(props: {
   projectId: string;
   sourceUrl: string;
-  files: Array<{ path: string; content: string }>;
+  files?: Array<{ path: string; content: string }>;
   filename?: string;
 }) {
-  const { projectId, sourceUrl, files } = props;
+  const { projectId, sourceUrl, files: filesProp } = props;
+  const files = Array.isArray(filesProp) ? filesProp : [];
   const filename = props.filename ?? "design2code_export.zip";
 
   const [busy, setBusy] = useState(false);
