@@ -97,9 +97,24 @@ export default function NewWizard({
         return;
       }
 
-      // 生成結果へ遷移
+      // デモモード: 保存なしで bundle のみ返却 → sessionStorage に保存して /result へ
+      if (data?.saved === false && data?.bundle) {
+        try {
+          sessionStorage.setItem("d2c_demo_bundle", JSON.stringify(data.bundle));
+        } catch {
+          // sessionStorage 失敗は無視
+        }
+        window.location.href = "/result";
+        return;
+      }
+
+      // 保存済み: projectId / generationId で結果ページへ
       if (typeof data?.projectId === "string" && typeof data?.generationId === "string") {
         window.location.href = `/projects/${data.projectId}/generations/${data.generationId}`;
+        return;
+      }
+      if (data?.bundle?.project?.id && data?.bundle?.generation?.id) {
+        window.location.href = `/projects/${data.bundle.project.id}/generations/${data.bundle.generation.id}`;
         return;
       }
 
@@ -112,29 +127,32 @@ export default function NewWizard({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
-      <div>
-        <Card className="p-6">
+    <div className="grid grid-cols-1 gap-4" style={{ width: "100%", maxWidth: "100%" }}>
+      {/* フォームを常に1カラムで幅いっぱいにして、URL/Token 欄を広く表示 */}
+      <div style={{ minWidth: 0, width: "100%" }}>
+        <Card className="p-6" style={{ width: "100%" }}>
           <div className="h2">新規作成</div>
           <p className="p-muted mt-2">
             Figma のURLを入力して生成します。プリセットは生成プロファイルとしてDBに保存され、次回以降も同じ設定で生成できます。
           </p>
 
-          <div className="mt-5 grid gap-3">
-            <div>
+          <div className="mt-5 grid gap-3" style={{ width: "100%" }}>
+            <div style={{ width: "100%", minWidth: 0 }}>
               <div className="text-sm font-medium">Figma URL</div>
               <input
-                className="input mt-2"
+                className="d2c-form-input-full mt-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value)}
                 placeholder="https://www.figma.com/file/... または /design/..."
               />
             </div>
 
-            <div>
+            <div style={{ width: "100%", minWidth: 0 }}>
               <div className="text-sm font-medium">Figma Token（任意）</div>
               <input
-                className="input mt-2"
+                className="d2c-form-input-full mt-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] px-4 py-3 text-sm outline-none"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={figmaToken}
                 onChange={(e) => setFigmaToken(e.target.value)}
                 placeholder="Personal Access Token（Images APIのプレビュー取得に使用）"
@@ -170,7 +188,7 @@ export default function NewWizard({
         </Card>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <Card className="p-6">
           <div className="h2">品質プリセット</div>
           <p className="p-muted mt-2">

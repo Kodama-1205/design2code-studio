@@ -137,6 +137,14 @@
     @apply mx-auto w-full max-w-6xl px-4;
   }
 
+  /* 新規作成フォームの URL/Token 入力欄を確実に幅いっぱいにする */
+  .d2c-form-input-full {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
   .h1 {
     @apply text-2xl sm:text-3xl font-semibold tracking-tight;
   }
