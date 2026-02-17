@@ -194,11 +194,11 @@ export default function NewWizard({
             ここで選んだプリセットは、サーバ側で <code>d2c_profiles</code> に自動作成（または再利用）され、生成に紐付きます。
           </p>
 
-          <div className="mt-4 grid gap-2">
+          <div className="mt-4 grid grid-cols-1 min-[500px]:grid-cols-3 gap-3">
             {PRESETS.map((p) => (
               <label
                 key={p.id}
-                className={`cursor-pointer rounded-xl border px-4 py-3 transition ${
+                className={`cursor-pointer rounded-xl border px-4 py-3 transition min-w-0 ${
                   presetId === p.id
                     ? "border-[rgba(var(--accent),0.75)] bg-[rgba(var(--accent),0.10)]"
                     : "border-[rgb(var(--border))] bg-[rgb(var(--surface2))] hover:border-[rgba(var(--accent),0.45)]"

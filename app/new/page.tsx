@@ -12,7 +12,7 @@ export default function Page({
     typeof searchParams.sourceUrl === "string" ? searchParams.sourceUrl : undefined;
 
   return (
-    <div className="container-max py-10">
+    <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
       <NewWizard projectId={projectId} sourceUrl={sourceUrl ?? ""} />
     </div>
   );
