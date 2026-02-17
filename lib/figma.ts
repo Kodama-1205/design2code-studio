@@ -4,6 +4,35 @@
  * - server runtime でのみ使用
  */
 
+/**
+ * Figma URL から fileKey と nodeId を抽出する
+ * - 対応: https://www.figma.com/design/XXX/YYY?node-id=12%3A345 および /file/XXX/YYY
+ * - node-id が無い場合は null を返す
+ */
+export function parseFigmaUrl(sourceUrl: string): { fileKey: string; nodeId: string } | null {
+  const trimmed = (sourceUrl || "").trim();
+  if (trimmed.length < 10) return null;
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (!url.hostname.includes("figma.com")) return null;
+
+  const segs = url.pathname.split("/").filter(Boolean);
+  const designOrFile = segs[0];
+  const fileKey = segs[1];
+  if ((designOrFile !== "design" && designOrFile !== "file") || !fileKey) return null;
+
+  const nodeIdParam = url.searchParams.get("node-id") ?? url.searchParams.get("node_id");
+  if (!nodeIdParam || nodeIdParam.length < 2) return null;
+  const nodeId = decodeURIComponent(nodeIdParam).replace(/-/g, ":");
+
+  return { fileKey, nodeId };
+}
+
 export type FigmaColor = { r: number; g: number; b: number; a?: number };
 
 export type FigmaNode = {
