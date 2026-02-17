@@ -128,7 +128,6 @@ export default function NewWizard({
 
   return (
     <div className="grid grid-cols-1 gap-4" style={{ width: "100%", maxWidth: "100%" }}>
-      {/* フォームを常に1カラムで幅いっぱいにして、URL/Token 欄を広く表示 */}
       <div style={{ minWidth: 0, width: "100%" }}>
         <Card className="p-6" style={{ width: "100%" }}>
           <div className="h2">新規作成</div>

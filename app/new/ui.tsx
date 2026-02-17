@@ -36,7 +36,6 @@ export default function NewClient(props: {
         body: JSON.stringify({
           sourceUrl,
           projectId: projectId || undefined,
-          // 再生成でもトークンを入れられる（入力されているときだけ送る）
           figmaToken: figmaToken.trim() ? figmaToken.trim() : undefined,
         }),
       });
@@ -64,6 +63,7 @@ export default function NewClient(props: {
         router.push(`/projects/${data.projectId}/generations/${data.generationId}`);
         return;
       }
+
       if (data?.bundle?.project?.id && data?.bundle?.generation?.id) {
         router.push(`/projects/${data.bundle.project.id}/generations/${data.bundle.generation.id}`);
         return;

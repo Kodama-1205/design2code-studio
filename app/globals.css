@@ -145,6 +145,7 @@
     box-sizing: border-box;
   }
 
+
   .h1 {
     @apply text-2xl sm:text-3xl font-semibold tracking-tight;
   }
