@@ -59,17 +59,20 @@ async function savePreviewIfPossible(params: {
   }
 
   try {
+    console.log(`[savePreviewIfPossible] Figma Images API を呼び出し: fileKey=${params.fileKey}, nodeId=${params.nodeId}`);
     const imageUrl = await fetchFigmaImageUrl({
       fileKey: params.fileKey,
       nodeId: params.nodeId,
       token: params.token,
       scale: 2,
     });
+    console.log(`[savePreviewIfPossible] 画像URL取得成功: ${imageUrl.substring(0, 100)}...`);
     const imgRes = await fetch(imageUrl, { cache: "no-store" });
     if (!imgRes.ok) {
       console.warn(`[savePreviewIfPossible] Figma 画像の取得に失敗: ${imgRes.status} ${imgRes.statusText}`);
       return;
     }
+    console.log(`[savePreviewIfPossible] 画像ダウンロード成功: ${imgRes.status}`);
     const buf = Buffer.from(await imgRes.arrayBuffer());
     const path = `${params.projectId}/${params.snapshotHash}.png`;
     const { error: uploadError } = await supabase.storage.from("d2c-previews").upload(path, buf, {
@@ -171,6 +174,7 @@ export async function POST(req: Request) {
 
         // ✅ プレビュー画像の保存は Token があれば実行（失敗してもプロジェクト保存は続行）
         if (figmaToken) {
+          console.log(`[generate] プレビュー画像を保存します: fileKey=${fileKey}, nodeId=${nodeId}, snapshotHash=${artifacts.snapshotHash}`);
           try {
             await savePreviewIfPossible({
               projectId: project.id,
@@ -183,6 +187,8 @@ export async function POST(req: Request) {
             // プレビュー保存失敗は無視（プロジェクト保存は続行）
             console.warn("[generate] プレビュー画像の保存に失敗しましたが、プロジェクト保存は続行します:", previewError);
           }
+        } else {
+          console.log("[generate] Figma Token が未入力のため、プレビュー画像は保存されません");
         }
 
         // ✅ プロジェクト・generation の保存は Token 不要で必ず実行

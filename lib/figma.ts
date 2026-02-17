@@ -115,6 +115,7 @@ export async function fetchFigmaImageUrl(input: {
     `https://api.figma.com/v1/images/${encodeURIComponent(fileKey)}` +
     `?ids=${encodeURIComponent(nodeId)}&format=png&scale=${encodeURIComponent(String(scale))}`;
 
+  console.log(`[fetchFigmaImageUrl] Figma Images API を呼び出し: url=${url.substring(0, 100)}..., nodeId=${nodeId}`);
   const res = await fetch(url, {
     headers: { "X-Figma-Token": token },
     cache: "no-store"
@@ -122,12 +123,15 @@ export async function fetchFigmaImageUrl(input: {
 
   const json = (await res.json().catch(() => null)) as any;
   if (!res.ok) {
+    console.error(`[fetchFigmaImageUrl] API エラー: ${res.status}`, json);
     throw new Error(`Figma images fetch failed: ${res.status} ${JSON.stringify(json)}`);
   }
   const u = json?.images?.[nodeId];
   if (typeof u !== "string" || u.length < 10) {
+    console.error(`[fetchFigmaImageUrl] 画像URLが見つかりません: nodeId=${nodeId}, response=`, json);
     throw new Error(`Figma images response missing url for nodeId=${nodeId}`);
   }
+  console.log(`[fetchFigmaImageUrl] 画像URL取得成功: ${u.substring(0, 100)}...`);
   return u;
 }
 
