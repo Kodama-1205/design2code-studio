@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { deleteProject } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -13,6 +14,7 @@ export async function DELETE(
 ) {
   try {
     await deleteProject(params.projectId);
+    revalidatePath("/dashboard");
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
     return NextResponse.json(
