@@ -107,19 +107,19 @@ export async function POST(req: Request) {
     if (serverEnv && supabase) {
       try {
         let projectName = projectNameFromFileKey(fileKey);
+        let effectiveProjectId: string | undefined = projectId;
         if (projectId) {
           const existing = await getProject(projectId);
           if (!existing) {
-            return NextResponse.json<ErrorResponse>(
-              { message: "指定されたプロジェクトが見つかりません。" },
-              { status: 404 }
-            );
+            // 無効な projectId（削除済み等）の場合は新規作成として続行
+            effectiveProjectId = undefined;
+          } else {
+            projectName = existing.name;
           }
-          projectName = existing.name;
         }
 
         const project = await createOrUpdateProject({
-          id: projectId,
+          id: effectiveProjectId,
           name: projectName,
           figma_file_key: fileKey,
           figma_node_id: nodeId,
