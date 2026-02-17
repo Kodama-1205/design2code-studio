@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const projects = await listProjects({ ownerId: process.env.DEMO_OWNER_ID! });
+  const projects = await listProjects();
 
   return (
     <div className="space-y-6">
@@ -48,7 +48,10 @@ export default async function DashboardPage() {
                 <GenerationActions project={p} />
 
                 <div className="flex items-center gap-2">
-                  <Link className="btn btn-secondary px-3 py-2 rounded-xl text-sm font-semibold" href={`/projects/${p.id}`}>
+                  <Link
+                    className="btn btn-secondary px-3 py-2 rounded-xl text-sm font-semibold"
+                    href={p.last_generation_id ? `/projects/${p.id}/generations/${p.last_generation_id}` : `/projects/${p.id}`}
+                  >
                     開く
                   </Link>
                   <DeleteProjectButton projectId={p.id} />

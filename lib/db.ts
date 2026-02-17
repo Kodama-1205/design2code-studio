@@ -1,7 +1,7 @@
 // lib/db.ts
 import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { getServerEnv } from "@/lib/env";
+import { getServerEnv, getServerEnvOrNull } from "@/lib/env";
 
 /**
  * DBアクセス層
@@ -101,14 +101,15 @@ export async function getProject(projectId: string): Promise<ProjectRow | null> 
 /**
  * ✅ ダッシュボード用：プロジェクト一覧（owner_idで絞る）
  * - 各プロジェクトの最新 generation_id を付与
+ * - Supabase 未設定時は空配列を返し、ダッシュボードは「保存されたプロジェクトがありません」を表示
  */
 export async function listProjects(): Promise<
   Array<ProjectRow & { last_generation_id: string | null }>
 > {
-  const serverEnv = getServerEnv();
+  const serverEnv = getServerEnvOrNull();
   const supabaseAdmin = getSupabaseAdmin();
-  if (!supabaseAdmin) {
-    throw new Error("Supabase が未設定のため、プロジェクト一覧は取得できません。");
+  if (!serverEnv || !supabaseAdmin) {
+    return [];
   }
 
   const { data: projects, error } = await supabaseAdmin

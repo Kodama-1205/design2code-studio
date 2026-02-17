@@ -99,6 +99,9 @@ export default function Page() {
     <div className="container-max py-10">
       <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200 mb-6">
         <strong>デモモード</strong> — プロジェクトは保存されていません。コードの確認とZIP出力のみ利用できます。
+        <p className="mt-2 text-xs opacity-90">
+          保存・ダッシュボード・削除を使うには、環境変数（NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / D2C_OWNER_ID）を設定して再デプロイしてください。
+        </p>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

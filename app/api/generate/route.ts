@@ -175,8 +175,12 @@ export async function POST(req: Request) {
           generationId: generation.id,
         };
         return NextResponse.json(out, { status: 200 });
-      } catch {
-        // 保存失敗時はデモバンドルへ
+      } catch (saveError: unknown) {
+        const msg = saveError instanceof Error ? saveError.message : "保存中にエラーが発生しました。";
+        return NextResponse.json<ErrorResponse>(
+          { message: `保存に失敗しました: ${msg}`, error: msg },
+          { status: 500 }
+        );
       }
     }
 
