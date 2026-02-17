@@ -185,7 +185,12 @@ export async function POST(req: Request) {
             });
           } catch (previewError) {
             // プレビュー保存失敗は無視（プロジェクト保存は続行）
-            console.warn("[generate] プレビュー画像の保存に失敗しましたが、プロジェクト保存は続行します:", previewError);
+            const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
+            if (errorMsg.includes("レート制限")) {
+              console.warn("[generate] プレビュー画像の保存がレート制限により失敗しましたが、プロジェクト保存は続行します");
+            } else {
+              console.warn("[generate] プレビュー画像の保存に失敗しましたが、プロジェクト保存は続行します:", previewError);
+            }
           }
         } else {
           console.log("[generate] Figma Token が未入力のため、プレビュー画像は保存されません");

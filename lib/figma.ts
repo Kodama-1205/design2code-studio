@@ -124,6 +124,9 @@ export async function fetchFigmaImageUrl(input: {
   const json = (await res.json().catch(() => null)) as any;
   if (!res.ok) {
     console.error(`[fetchFigmaImageUrl] API エラー: ${res.status}`, json);
+    if (res.status === 429) {
+      throw new Error(`Figma API のレート制限に達しました。数分待ってから再度お試しください。`);
+    }
     throw new Error(`Figma images fetch failed: ${res.status} ${JSON.stringify(json)}`);
   }
   const u = json?.images?.[nodeId];
