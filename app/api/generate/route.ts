@@ -13,7 +13,7 @@ import {
   setGenerationStatus,
   saveGenerationArtifacts,
 } from "@/lib/db";
-import { runMockPipeline } from "@/lib/mockPipeline";
+import { runMockPipeline, renderAndCompareGeneratedCode } from "@/lib/mockPipeline";
 import { buildDemoBundle, type DemoBundle } from "@/lib/demoBundle";
 import crypto from "crypto";
 
@@ -173,9 +173,23 @@ export async function POST(req: Request) {
         });
 
         // ✅ プレビュー画像の保存は Token があれば実行（失敗してもプロジェクト保存は続行）
+        let figmaImageUrl: string | null = null;
         if (figmaToken) {
           console.log(`[generate] プレビュー画像を保存します: fileKey=${fileKey}, nodeId=${nodeId}, snapshotHash=${artifacts.snapshotHash}`);
           try {
+            // Figma画像URLを取得（レンダリング比較用）
+            try {
+              figmaImageUrl = await fetchFigmaImageUrl({
+                fileKey,
+                nodeId,
+                token: figmaToken,
+                scale: 2,
+              });
+            } catch (urlError) {
+              console.warn("[generate] Figma画像URLの取得に失敗:", urlError);
+            }
+
+            // Storageに保存
             await savePreviewIfPossible({
               projectId: project.id,
               snapshotHash: artifacts.snapshotHash,
@@ -183,6 +197,27 @@ export async function POST(req: Request) {
               nodeId,
               token: figmaToken,
             });
+
+            // ✅ 生成されたコードをレンダリングして比較
+            if (figmaImageUrl) {
+              console.log("[generate] 生成コードをレンダリングして比較します");
+              try {
+                const { diffMeta } = await renderAndCompareGeneratedCode({
+                  files: artifacts.files,
+                  figmaImageUrl,
+                  projectId: project.id,
+                  snapshotHash: artifacts.snapshotHash,
+                });
+
+                // 比較結果を report に追加
+                if (diffMeta) {
+                  (artifacts.report as any).visualDiff = diffMeta;
+                  console.log(`[generate] 比較完了: diffRatio=${(diffMeta.diffRatio * 100).toFixed(2)}%`);
+                }
+              } catch (renderError) {
+                console.warn("[generate] コードレンダリング・比較処理でエラー:", renderError);
+              }
+            }
           } catch (previewError) {
             // プレビュー保存失敗は無視（プロジェクト保存は続行）
             const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
