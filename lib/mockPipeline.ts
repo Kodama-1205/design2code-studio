@@ -222,6 +222,7 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto
  * 生成されたコードをレンダリングして比較する（オプション）
  * - Figma Token がある場合のみ実行
  * - 生成されたHTMLをレンダリングしてPNG化し、Figma画像と比較
+ * - Chromium が利用できない場合: Figma画像を _render にフォールバック保存し、確認用に表示可能にする
  */
 export async function renderAndCompareGeneratedCode(params: {
   files: Array<{ path: string; content: string }>;
@@ -231,26 +232,20 @@ export async function renderAndCompareGeneratedCode(params: {
 }): Promise<{ renderPng: Uint8Array | null; diffPng: Uint8Array | null; diffMeta: any }> {
   const { files, figmaImageUrl, projectId, snapshotHash } = params;
 
-  // Figma画像が無い場合はスキップ
   if (!figmaImageUrl) {
     return { renderPng: null, diffPng: null, diffMeta: null };
   }
 
   try {
-    // 生成されたHTMLを構築（app/page.tsx からHTMLを抽出）
     const pageFile = files.find((f) => f.path === "app/page.tsx");
     if (!pageFile) {
       console.warn("[renderAndCompareGeneratedCode] app/page.tsx が見つかりません");
       return { renderPng: null, diffPng: null, diffMeta: null };
     }
 
-    // JSXからHTMLを構築（簡易版：実際のReactレンダリングは複雑なので、スタイルを抽出してHTML化）
     const html = buildHtmlFromGeneratedCode(pageFile.content, files);
-
-    // HTMLをレンダリングしてPNG化
     const renderPng = await renderHtmlToPng({ html, width: 1280, height: 720 });
 
-    // Figma画像を取得
     const figmaRes = await fetch(figmaImageUrl, { cache: "no-store" });
     if (!figmaRes.ok) {
       console.warn(`[renderAndCompareGeneratedCode] Figma画像の取得に失敗: ${figmaRes.status}`);
@@ -258,7 +253,6 @@ export async function renderAndCompareGeneratedCode(params: {
     }
     const figmaPng = new Uint8Array(await figmaRes.arrayBuffer());
 
-    // 差分を計算
     const diff = await diffPngBuffers({ aPng: figmaPng, bPng: renderPng, threshold: 0.12 });
     const diffMeta = {
       diffRatio: diff.diffRatio,
@@ -267,18 +261,14 @@ export async function renderAndCompareGeneratedCode(params: {
       threshold: 0.12,
     };
 
-    // Storageに保存
     const supabase = (await import("@/lib/supabaseAdmin")).getSupabaseAdmin();
     if (supabase) {
-      // レンダリング結果を保存
       await supabase.storage
         .from("d2c-previews")
         .upload(`${projectId}/${snapshotHash}_render.png`, Buffer.from(renderPng), {
           contentType: "image/png",
           upsert: true,
         });
-
-      // 差分画像を保存
       await supabase.storage
         .from("d2c-previews")
         .upload(`${projectId}/${snapshotHash}_diff.png`, Buffer.from(diff.diffPng), {
@@ -289,32 +279,74 @@ export async function renderAndCompareGeneratedCode(params: {
 
     return { renderPng, diffPng: diff.diffPng, diffMeta };
   } catch (e) {
-    console.error("[renderAndCompareGeneratedCode] レンダリング・比較処理でエラー:", e);
-    return { renderPng: null, diffPng: null, diffMeta: null };
+    const errMsg = e instanceof Error ? e.message : String(e);
+    console.error("[renderAndCompareGeneratedCode] レンダリング・比較でエラー:", errMsg);
+
+    // Chromium 等で失敗した場合: Figma画像を _render にフォールバック保存（確認用）
+    try {
+      const figmaRes = await fetch(figmaImageUrl, { cache: "no-store" });
+      if (figmaRes.ok) {
+        const figmaPng = await figmaRes.arrayBuffer();
+        const supabase = (await import("@/lib/supabaseAdmin")).getSupabaseAdmin();
+        if (supabase) {
+          await supabase.storage
+            .from("d2c-previews")
+            .upload(`${projectId}/${snapshotHash}_render.png`, Buffer.from(figmaPng), {
+              contentType: "image/png",
+              upsert: true,
+            });
+          console.log("[renderAndCompareGeneratedCode] Figma画像を _render にフォールバック保存しました");
+          return {
+            renderPng: new Uint8Array(figmaPng),
+            diffPng: null,
+            diffMeta: {
+              skipped: true,
+              fallbackToFigma: true,
+              reason: errMsg.includes("Chromium") ? "chromium_unavailable" : "render_error",
+            },
+          };
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn("[renderAndCompareGeneratedCode] フォールバック保存も失敗:", fallbackErr);
+    }
+
+    return { renderPng: null, diffPng: null, diffMeta: { skipped: true, reason: "render_failed" } };
   }
 }
 
 /**
  * 生成されたコードからHTMLを構築（簡易版）
  * - JSXのスタイル属性を抽出してHTML化
+ * - figmaPipeline 出力（img src="/figma-node.png"）の場合は data URL に差し替え
  */
 function buildHtmlFromGeneratedCode(pageContent: string, allFiles: Array<{ path: string; content: string }>): string {
   // globals.css を取得
   const globalsCss = allFiles.find((f) => f.path === "app/globals.css")?.content ?? "";
 
+  // figmaPipeline: public/figma-node.png の data URL を取得（img 表示用）
+  const figmaAsset = allFiles.find((f) => f.path === "public/figma-node.png");
+  const figmaImgSrc =
+    figmaAsset && figmaAsset.content.startsWith("data:")
+      ? figmaAsset.content
+      : null;
+
   // JSXからスタイルを抽出（簡易版：実際のReactレンダリングは複雑）
-  // ここでは、インラインスタイルを抽出してHTML化
   const styleMatches = pageContent.match(/style=\{\{([^}]+)\}\}/g) || [];
   const inlineStyles = styleMatches.map((m) => {
     const content = m.replace(/style=\{\{|}\}/g, "").trim();
-    // JSオブジェクト形式をCSSに変換（簡易版）
     return content
       .replace(/(\w+):\s*"([^"]+)"/g, '$1: $2')
       .replace(/(\w+):\s*(\d+)/g, "$1: $2px")
       .replace(/,/g, ";");
   });
 
-  // HTMLを構築
+  // figmaPipeline 出力用: img タグを data URL で構築
+  const imgTag = figmaImgSrc
+    ? `<img src="${figmaImgSrc.replace(/"/g, "&quot;")}" alt="Figma Node" style="margin-top:16px;max-width:100%" />`
+    : "";
+
+  // HTMLを構築（mockPipeline / figmaPipeline 両対応）
   return `<!doctype html>
 <html lang="ja">
 <head>
@@ -327,9 +359,12 @@ function buildHtmlFromGeneratedCode(pageContent: string, allFiles: Array<{ path:
   </style>
 </head>
 <body>
-  <div style="${inlineStyles[0] || ""}">
-    <h1 style="${inlineStyles[1] || ""}">Generated (Mock) — Design2Code Studio</h1>
-    <p style="${inlineStyles[2] || ""}">This is a generated scaffold.</p>
+  <div style="${inlineStyles[0] || "min-height:100vh;background:#121218;color:#F5F5FA;padding:24px"}">
+    <div style="${inlineStyles[1] || "max-width:960px;margin:0 auto"}">
+      <h1 style="${inlineStyles[2] || "color:#AA5AFF;font-size:28px;line-height:36px;margin:0"}">Generated — Design2Code Studio</h1>
+      <p style="${inlineStyles[3] || "opacity:0.8;margin-top:12px"}">${figmaImgSrc ? "これは Figma から生成した雛形です。" : "This is a generated scaffold."}</p>
+      ${imgTag}
+    </div>
   </div>
 </body>
 </html>`;

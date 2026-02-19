@@ -10,6 +10,56 @@ import type { GenerationBundle } from "@/lib/db";
 
 type Bundle = NonNullable<GenerationBundle>;
 
+/**
+ * プレビュー画像カード（エラーハンドリング付き）
+ */
+function PreviewImageCard({
+  label,
+  src,
+  alt,
+  fallbackMessage,
+  diffRatio,
+  sublabel,
+}: {
+  label: string;
+  src: string;
+  alt: string;
+  fallbackMessage: string;
+  diffRatio?: number;
+  sublabel?: string;
+}) {
+  const [imageError, setImageError] = useState(false);
+
+  return (
+    <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
+      <div className="text-xs text-[rgb(var(--muted))]">{label}</div>
+      {sublabel && <div className="mt-1 text-xs text-amber-600 dark:text-amber-400">{sublabel}</div>}
+      <div className="mt-3">
+        {imageError ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--muted))]/5 p-6 min-h-[200px]">
+            <div className="text-sm text-[rgb(var(--muted))] text-center">{fallbackMessage}</div>
+            <div className="mt-2 text-xs text-[rgb(var(--muted))] opacity-70">
+              （Figma APIのレート制限に達している可能性があります）
+            </div>
+          </div>
+        ) : (
+          <img
+            src={src}
+            alt={alt}
+            className="w-full rounded-xl border border-white/10"
+            onError={() => setImageError(true)}
+          />
+        )}
+      </div>
+      {diffRatio !== undefined && !imageError && (
+        <div className="mt-3 text-xs text-[rgb(var(--muted))]">
+          diffRatio: {String((diffRatio * 100).toFixed(2))}%
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ResultTabs({ bundle }: { bundle: Bundle }) {
   const tabs = useMemo(() => ["プレビュー", "コード", "レポート", "マッピング"] as const, []);
   const [active, setActive] = useState<(typeof tabs)[number]>("プレビュー");
@@ -147,43 +197,28 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
 
           {project?.id && snapshotHash ? (
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-                <div className="text-xs text-[rgb(var(--muted))]">Figma（Storage）</div>
-                <div className="mt-3">
-                  <img
-                    src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}`}
-                    alt="figma"
-                    className="w-full rounded-xl border border-white/10"
-                  />
-                </div>
-              </div>
+              <PreviewImageCard
+                label="Figma（Storage）"
+                src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}`}
+                alt="figma"
+                fallbackMessage="Figma画像が保存されていません。Figma Tokenを入力して生成を実行してください。"
+              />
 
-              <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-                <div className="text-xs text-[rgb(var(--muted))]">生成レンダリング（IR）</div>
-                <div className="mt-3">
-                  <img
-                    src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_render")}`}
-                    alt="render"
-                    className="w-full rounded-xl border border-white/10"
-                  />
-                </div>
-              </div>
+              <PreviewImageCard
+                label="生成レンダリング（IR）"
+                src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_render")}`}
+                alt="render"
+                fallbackMessage="生成コードのレンダリング結果が保存されていません。Figma Tokenを入力して生成を実行してください。"
+                sublabel={(generation.report_json as any)?.visualDiff?.fallbackToFigma ? "（レンダリング環境制限のため、Figma画像を表示しています）" : undefined}
+              />
 
-              <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-                <div className="text-xs text-[rgb(var(--muted))]">diff（差分）</div>
-                <div className="mt-3">
-                  <img
-                    src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_diff")}`}
-                    alt="diff"
-                    className="w-full rounded-xl border border-white/10"
-                  />
-                </div>
-                {typeof (generation.report_json as any)?.visualDiff?.diffRatio === "number" && (
-                  <div className="mt-3 text-xs text-[rgb(var(--muted))]">
-                    diffRatio: {String(((generation.report_json as any).visualDiff.diffRatio * 100).toFixed(2))}%
-                  </div>
-                )}
-              </div>
+              <PreviewImageCard
+                label="diff（差分）"
+                src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_diff")}`}
+                alt="diff"
+                fallbackMessage="差分画像が保存されていません。Figma Tokenを入力して生成を実行してください。"
+                diffRatio={typeof (generation.report_json as any)?.visualDiff?.diffRatio === "number" ? (generation.report_json as any).visualDiff.diffRatio : undefined}
+              />
             </div>
           ) : null}
 

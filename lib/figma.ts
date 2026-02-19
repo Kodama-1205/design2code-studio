@@ -4,6 +4,50 @@
  * - server runtime でのみ使用
  */
 
+import crypto from "crypto";
+
+/**
+ * snapshotHash を生成（mockPipeline と形式を揃える）
+ * - プレビュー Storage のパス一意化に使用
+ */
+export function buildSnapshotHash(input: {
+  fileKey: string;
+  nodeId: string;
+  sourceUrl: string;
+}): string {
+  const s = `${input.fileKey}|${input.nodeId}|${input.sourceUrl}`;
+  const hex = crypto.createHash("sha256").update(s).digest("hex");
+  return `sha256:${hex}`;
+}
+
+/**
+ * Figma Images API でノード画像を取得し、base64 で返す
+ * - figmaPipeline のコード生成で使用
+ */
+export async function fetchFigmaNodeImage(input: {
+  ownerId?: string;
+  fileKey: string;
+  nodeId: string;
+  token: string;
+}): Promise<{ mime: string; base64: string } | null> {
+  try {
+    const imageUrl = await fetchFigmaImageUrl({
+      fileKey: input.fileKey,
+      nodeId: input.nodeId,
+      token: input.token,
+      scale: 2,
+    });
+    const res = await fetch(imageUrl, { cache: "no-store" });
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const base64 = Buffer.from(buf).toString("base64");
+    const contentType = res.headers.get("content-type") ?? "image/png";
+    return { mime: contentType, base64 };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Figma URL から fileKey と nodeId を抽出する
  * - 対応: https://www.figma.com/design/XXX/YYY?node-id=12%3A345 および /file/XXX/YYY

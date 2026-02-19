@@ -14,6 +14,7 @@ import {
   saveGenerationArtifacts,
 } from "@/lib/db";
 import { runMockPipeline, renderAndCompareGeneratedCode } from "@/lib/mockPipeline";
+import { runFigmaPipeline } from "@/lib/figmaPipeline";
 import { buildDemoBundle, type DemoBundle } from "@/lib/demoBundle";
 import crypto from "crypto";
 
@@ -163,14 +164,26 @@ export async function POST(req: Request) {
           started_at: new Date().toISOString(),
         });
 
-        console.log("[generate] パイプライン実行中...");
-        const artifacts = await runMockPipeline({
-          figmaFileKey: fileKey,
-          figmaNodeId: nodeId,
-          sourceUrl,
-          projectId: project.id,
-          generationId: generation.id,
-        });
+        // ✅ Figma Token がある場合: 画像を取得してコード生成（runFigmaPipeline）
+        //    Token がない場合: モック雛形のみ（runMockPipeline）
+        console.log("[generate] パイプライン実行中...", figmaToken ? "（Figma画像を使用）" : "（モック）");
+        const artifacts = figmaToken
+          ? await runFigmaPipeline({
+              ownerId: project.owner_id,
+              figmaFileKey: fileKey,
+              figmaNodeId: nodeId,
+              sourceUrl,
+              projectId: project.id,
+              generationId: generation.id,
+              figmaToken,
+            })
+          : await runMockPipeline({
+              figmaFileKey: fileKey,
+              figmaNodeId: nodeId,
+              sourceUrl,
+              projectId: project.id,
+              generationId: generation.id,
+            });
 
         // ✅ プレビュー画像の保存は Token があれば実行（失敗してもプロジェクト保存は続行）
         let figmaImageUrl: string | null = null;
