@@ -5,6 +5,7 @@ import EmptyState from "@/components/EmptyState";
 import DeleteProjectButton from "@/components/DeleteProjectButton";
 import GenerationActions from "@/components/GenerationActions";
 import ProjectThumbnail from "@/components/ProjectThumbnail";
+import DashboardRefresher from "@/components/DashboardRefresher";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* クライアント遷移時の Router Cache を無効化し、リロード不要で最新一覧を表示 */}
+      <DashboardRefresher />
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="h1">ダッシュボード</h1>

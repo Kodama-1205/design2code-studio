@@ -1,0 +1,32 @@
+---
+description: npm run build 等の実行時にサンドボックス制限・文字化けを回避するためのルール
+alwaysApply: true
+---
+
+# ビルド・開発サーバー実行時のルール
+
+## 背景
+
+本プロジェクトでは、`npm run build` や `npm run dev` 実行時に以下の問題が発生することがある:
+
+1. **EPERM (spawn)** - サンドボックスが子プロセス生成を制限するため
+2. **パスエンコーディング** - ワークスペースパスに非ASCII文字が含まれる場合、cd コマンドが失敗することがある
+3. **文字化け** - ターミナル出力が UTF-8 でないコードページで表示されると日本語が文字化けする
+
+## 対策
+
+`run_terminal_cmd` で以下のコマンドを実行する際は、必ず以下を指定すること:
+
+- **required_permissions: ["all"]** - サンドボックスを無効化し、EPERM を回避
+- **working_directory** - ワークスペースの絶対パスを指定（cd を省略してエンコーディング問題を回避）
+
+### 対象コマンド
+
+- `npm run build`
+- `npm run dev`
+- `npm run lint`
+- `vercel` / `vercel --prod` 等のデプロイコマンド
+
+### Windows で文字化けを避ける場合
+
+プロジェクトルートの `scripts\build.cmd` または `scripts\dev.cmd` を実行すること（chcp 65001 で UTF-8 に切り替えてから実行するため、日本語ログが正しく表示される）

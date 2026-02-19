@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "build:win": "scripts/build.cmd",
+    "dev:win": "scripts/dev.cmd"
   },
   "dependencies": {
     "@sparticuz/chromium": "^123.0.0",

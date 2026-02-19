@@ -78,11 +78,28 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
 
   const [imgOk, setImgOk] = useState<boolean | null>(null);
 
-  // レポート側に debug がある場合は補助表示（無くてもOK）
   const previewDebug = (generation.report_json as any)?.preview_debug;
+
+  const isEmptyState = files.length === 0 && mappings.length === 0;
+  const isFailedOrRunning = generation.status === "failed" || generation.status === "running";
 
   return (
     <Card className="p-0 overflow-hidden">
+      {isEmptyState && isFailedOrRunning ? (
+        <div className="mx-4 mt-4 mb-0 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="font-semibold">生成が完了していません</div>
+          <p className="mt-1 text-amber-200/90">
+            生成処理が失敗したか、まだ実行中のためデータがありません。Figma Token を入力して「再生成」を実行してください。
+          </p>
+          <Button
+            href={`/new?projectId=${encodeURIComponent(project.id)}&sourceUrl=${encodeURIComponent(project.source_url ?? "")}`}
+            variant="secondary"
+            className="mt-3"
+          >
+            再生成（トークン入力）
+          </Button>
+        </div>
+      ) : null}
       <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
         <div className="px-4 py-3 flex items-center justify-between gap-3">
           <div className="text-sm font-semibold">生成結果</div>

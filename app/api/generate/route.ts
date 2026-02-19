@@ -129,6 +129,7 @@ export async function POST(req: Request) {
     }
 
     if (serverEnv && supabase) {
+      let generationIdForCleanup: string | null = null;
       try {
         console.log("[generate] 保存モード: プロジェクトと generation を DB に保存します");
         let projectName = projectNameFromFileKey(fileKey);
@@ -136,7 +137,6 @@ export async function POST(req: Request) {
         if (projectId) {
           const existing = await getProject(projectId);
           if (!existing) {
-            // 無効な projectId（削除済み等）の場合は新規作成として続行
             effectiveProjectId = undefined;
           } else {
             projectName = existing.name;
@@ -159,6 +159,7 @@ export async function POST(req: Request) {
           profile_id: null,
         });
         console.log(`[generate] Generation 作成完了: ${generation.id}`);
+        generationIdForCleanup = generation.id;
 
         await setGenerationStatus(generation.id, "running", {
           started_at: new Date().toISOString(),
@@ -271,7 +272,13 @@ export async function POST(req: Request) {
         return NextResponse.json(out, { status: 200 });
       } catch (saveError: unknown) {
         const msg = saveError instanceof Error ? saveError.message : "保存中にエラーが発生しました。";
-        // ネットワーク／接続系のエラーは原因が分かりやすいよう補足を付ける
+        // パイプライン/保存失敗時: generation を failed に更新（空のまま running で残さない）
+        if (generationIdForCleanup) {
+          await setGenerationStatus(generationIdForCleanup, "failed", {
+            finished_at: new Date().toISOString(),
+            error_json: { message: msg },
+          }).catch(() => {});
+        }
         const isNetworkError =
           /fetch failed|Failed to fetch|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network/i.test(msg);
         const displayMessage = isNetworkError
