@@ -79,6 +79,8 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
   const [imgOk, setImgOk] = useState<boolean | null>(null);
 
   const previewDebug = (generation.report_json as any)?.preview_debug;
+  const figmaFallbackToMock = Boolean((generation.report_json as any)?.figmaFallbackToMock);
+  const figmaFallbackMessage = (generation.report_json as any)?.figmaFallbackMessage as string | undefined;
 
   const isEmptyState = files.length === 0 && mappings.length === 0;
   const isFailedOrRunning = generation.status === "failed" || generation.status === "running";
@@ -100,6 +102,12 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
           </Button>
         </div>
       ) : null}
+      {figmaFallbackToMock && !isEmptyState && (
+        <div className="mx-4 mt-4 mb-0 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="font-semibold">Figma 画像取得失敗によりモック雛形で表示</div>
+          <p className="mt-1 text-amber-200/90">{figmaFallbackMessage ?? "Figma画像の取得に失敗したため、モック雛形で表示しています。"}</p>
+        </div>
+      )}
       <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
         <div className="px-4 py-3 flex items-center justify-between gap-3">
           <div className="text-sm font-semibold">生成結果</div>

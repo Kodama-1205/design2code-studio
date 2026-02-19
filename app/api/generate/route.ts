@@ -166,25 +166,45 @@ export async function POST(req: Request) {
         });
 
         // ✅ Figma Token がある場合: 画像を取得してコード生成（runFigmaPipeline）
-        //    Token がない場合: モック雛形のみ（runMockPipeline）
+        //    Token がない場合 / Figma 失敗時: モック雛形にフォールバック（runMockPipeline）
+        //    整合: 常に何らかの出力を返す（空のまま running で残さない）
         console.log("[generate] パイプライン実行中...", figmaToken ? "（Figma画像を使用）" : "（モック）");
-        const artifacts = figmaToken
-          ? await runFigmaPipeline({
-              ownerId: project.owner_id,
-              figmaFileKey: fileKey,
-              figmaNodeId: nodeId,
-              sourceUrl,
-              projectId: project.id,
-              generationId: generation.id,
-              figmaToken,
-            })
-          : await runMockPipeline({
+        let artifacts: Awaited<ReturnType<typeof runMockPipeline>>;
+        let figmaFallbackToMock = false;
+        try {
+          artifacts = figmaToken
+            ? await runFigmaPipeline({
+                ownerId: project.owner_id,
+                figmaFileKey: fileKey,
+                figmaNodeId: nodeId,
+                sourceUrl,
+                projectId: project.id,
+                generationId: generation.id,
+                figmaToken,
+              })
+            : await runMockPipeline({
+                figmaFileKey: fileKey,
+                figmaNodeId: nodeId,
+                sourceUrl,
+                projectId: project.id,
+                generationId: generation.id,
+              });
+        } catch (pipelineError) {
+          if (figmaToken) {
+            const errMsg = pipelineError instanceof Error ? pipelineError.message : String(pipelineError);
+            console.warn("[generate] Figmaパイプライン失敗、モックへフォールバック:", errMsg);
+            figmaFallbackToMock = true;
+            artifacts = await runMockPipeline({
               figmaFileKey: fileKey,
               figmaNodeId: nodeId,
               sourceUrl,
               projectId: project.id,
               generationId: generation.id,
             });
+          } else {
+            throw pipelineError;
+          }
+        }
 
         // ✅ プレビュー画像の保存は Token があれば実行（失敗してもプロジェクト保存は続行）
         let figmaImageUrl: string | null = null;
@@ -243,6 +263,13 @@ export async function POST(req: Request) {
           }
         } else {
           console.log("[generate] Figma Token が未入力のため、プレビュー画像は保存されません");
+        }
+
+        // ✅ Figma 失敗時のフォールバック情報を report に記録（ResultTabs で表示）
+        if (figmaFallbackToMock) {
+          (artifacts.report as Record<string, unknown>).figmaFallbackToMock = true;
+          (artifacts.report as Record<string, unknown>).figmaFallbackMessage =
+            "Figma画像の取得に失敗したため、モック雛形で表示しています。対象の node-id が Frame であることを確認し、しばらく待ってから再生成してください。";
         }
 
         // ✅ プロジェクト・generation の保存は Token 不要で必ず実行
