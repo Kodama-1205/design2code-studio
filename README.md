@@ -91,14 +91,18 @@ git push -u origin main
 
 **Settings → Environment Variables** で次を追加します。
 
-| Name | Value | 環境 |
-|------|--------|------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_PROJECT.supabase.co` | Production / Preview |
-| `SUPABASE_SERVICE_ROLE_KEY` | （Supabase のサービスロールキー） | Production / Preview |
-| `D2C_OWNER_ID` | 例: `00000000-0000-0000-0000-000000000001` | Production / Preview |
-| `NEXT_PUBLIC_APP_URL` | `https://your-app.vercel.app`（デプロイ後の URL） | Production |
+| Name | Value | 必須 | 環境 |
+|------|--------|------|------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase の Project URL（例: `https://xxx.supabase.co`） | ✅ | Production / Preview |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase の anon key（ログイン・クライアント用） | ✅ | Production / Preview |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase の service_role key（DB・Storage 用） | ✅ | Production / Preview |
+| `D2C_OWNER_ID` | オーナー用 UUID（例: ローカルで使っているもの） | ✅ | Production / Preview |
+| `D2C_ENCRYPTION_KEY` | 32文字以上の任意文字列（ユーザーシークレット暗号化用） | 推奨 | Production / Preview |
+| `NEXT_PUBLIC_APP_URL` | デプロイ後の URL（例: `https://your-app.vercel.app`） | 推奨 | Production |
+| `FIGMA_ACCESS_TOKEN` | Figma Personal Access Token（プレビュー画像取得用） | 任意 | Production / Preview |
 
-- `NEXT_PUBLIC_APP_URL` は、Regenerate 実行後のリダイレクト先になります。デプロイ後は「Vercel のドメイン」に合わせて設定してください（例: `https://design2code-studio.vercel.app`）。
+- `NEXT_PUBLIC_APP_URL` は、Regenerate 実行後のリダイレクト先です。デプロイ後に Vercel のドメインを設定してください。
+- Supabase の **Storage バケット `d2c-previews`** を Public にしておくと、プレビュー画像が表示されます。
 
 ### 3. デプロイ
 

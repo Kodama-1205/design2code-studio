@@ -14,6 +14,10 @@ export const revalidate = 0; // 常に最新データを取得（キャッシュ
 export default async function DashboardPage() {
   const projects = await listProjects();
 
+  const supabasePreviewsBase = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/d2c-previews`
+    : "";
+
   return (
     <div className="space-y-6">
       {/* クライアント遷移時の Router Cache を無効化し、リロード不要で最新一覧を表示 */}
@@ -38,9 +42,9 @@ export default async function DashboardPage() {
             <Card key={p.id} className="p-5">
               <div className="flex items-start justify-between gap-3">
                 {/* 確認用サムネイル（Storage にプレビューがある場合表示；取得失敗時は「画像なし」） */}
-                {p.last_snapshot_hash ? (
+                {p.last_snapshot_hash && supabasePreviewsBase ? (
                   <ProjectThumbnail
-                    src={`/api/previews/${encodeURIComponent(p.id)}/${encodeURIComponent(p.last_snapshot_hash)}`}
+                    src={`${supabasePreviewsBase}/${encodeURIComponent(p.id)}/${encodeURIComponent(p.last_snapshot_hash)}.png`}
                     href={p.last_generation_id ? `/projects/${p.id}/generations/${p.last_generation_id}` : `/projects/${p.id}`}
                   />
                 ) : (

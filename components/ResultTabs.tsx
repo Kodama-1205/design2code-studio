@@ -71,10 +71,19 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
 
   const selectedFile = files.find((f) => f.path === selectedPath);
 
-  // ✅ プレビューURLは必ず /api/previews に統一（Storage → download）
+  // Supabase Storage の public URL ベース
+  const supabasePreviewsBase = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/d2c-previews`
+    : "";
+
+  // スナップショット用のハッシュ
   const snapshotHash = generation.figma_snapshot_hash ?? "";
-  const previewApiUrl =
-    project?.id && snapshotHash ? `/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}` : "";
+
+  // プレビュー表示用のURL（Supabase Storage を直接参照）
+  const previewImageUrl =
+    project?.id && snapshotHash && supabasePreviewsBase
+      ? `${supabasePreviewsBase}/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}.png`
+      : "";
 
   const [imgOk, setImgOk] = useState<boolean | null>(null);
 
@@ -127,15 +136,15 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
           </p>
 
           <div className="mt-4 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface2))] p-4">
-            {!previewApiUrl ? (
+            {!previewImageUrl ? (
               <div className="text-sm text-[rgb(var(--muted))]">
                 スナップショットがありません（node-id無し、または生成保存に失敗している可能性があります）。
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs text-[rgb(var(--muted))] break-all">{previewApiUrl}</div>
-                  <a className="text-xs underline text-[rgb(var(--muted))]" href={previewApiUrl} target="_blank" rel="noreferrer">
+                  <div className="text-xs text-[rgb(var(--muted))] break-all">{previewImageUrl}</div>
+                  <a className="text-xs underline text-[rgb(var(--muted))]" href={previewImageUrl} target="_blank" rel="noreferrer">
                     別タブで開く
                   </a>
                 </div>
@@ -165,7 +174,7 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
                   )}
 
                   <img
-                    src={previewApiUrl}
+                    src={previewImageUrl}
                     alt="preview"
                     className="w-full rounded-xl border border-white/10"
                     onLoad={() => setImgOk(true)}
@@ -220,18 +229,20 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
             report_json を表示します。Token付き生成では「Figma画像 vs 生成レンダリング」の差分（diff）も保存され、ここで確認できます。
           </p>
 
-          {project?.id && snapshotHash ? (
+          {project?.id && snapshotHash && supabasePreviewsBase ? (
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
               <PreviewImageCard
                 label="Figma（Storage）"
-                src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}`}
+                src={`${supabasePreviewsBase}/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash)}.png`}
                 alt="figma"
                 fallbackMessage="Figma画像が保存されていません。Figma Tokenを入力して生成を実行してください。"
               />
 
               <PreviewImageCard
                 label="生成レンダリング（IR）"
-                src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_render")}`}
+                src={`${supabasePreviewsBase}/${encodeURIComponent(project.id)}/${encodeURIComponent(
+                  snapshotHash + "_render"
+                )}.png`}
                 alt="render"
                 fallbackMessage="生成コードのレンダリング結果が保存されていません。Figma Tokenを入力して生成を実行してください。"
                 sublabel={(generation.report_json as any)?.visualDiff?.fallbackToFigma ? "（レンダリング環境制限のため、Figma画像を表示しています）" : undefined}
@@ -239,7 +250,9 @@ export default function ResultTabs({ bundle }: { bundle: Bundle }) {
 
               <PreviewImageCard
                 label="diff（差分）"
-                src={`/api/previews/${encodeURIComponent(project.id)}/${encodeURIComponent(snapshotHash + "_diff")}`}
+                src={`${supabasePreviewsBase}/${encodeURIComponent(project.id)}/${encodeURIComponent(
+                  snapshotHash + "_diff"
+                )}.png`}
                 alt="diff"
                 fallbackMessage="差分画像が保存されていません。Figma Tokenを入力して生成を実行してください。"
                 diffRatio={typeof (generation.report_json as any)?.visualDiff?.diffRatio === "number" ? (generation.report_json as any).visualDiff.diffRatio : undefined}
