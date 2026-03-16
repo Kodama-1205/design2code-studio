@@ -46,12 +46,14 @@ function projectNameFromFileKey(fileKey: string): string {
   return fileKey.length > 12 ? `Figma ${fileKey.slice(0, 8)}…` : `Figma ${fileKey}`;
 }
 
+/** 既に取得済みの画像URLを渡すと API を再呼びしません（レート制限対策） */
 async function savePreviewIfPossible(params: {
   projectId: string;
   snapshotHash: string;
   fileKey: string;
   nodeId: string;
   token: string;
+  imageUrl?: string;
 }): Promise<void> {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -60,14 +62,20 @@ async function savePreviewIfPossible(params: {
   }
 
   try {
-    console.log(`[savePreviewIfPossible] Figma Images API を呼び出し: fileKey=${params.fileKey}, nodeId=${params.nodeId}`);
-    const imageUrl = await fetchFigmaImageUrl({
-      fileKey: params.fileKey,
-      nodeId: params.nodeId,
-      token: params.token,
-      scale: 2,
-    });
-    console.log(`[savePreviewIfPossible] 画像URL取得成功: ${imageUrl.substring(0, 100)}...`);
+    let imageUrl: string;
+    if (params.imageUrl) {
+      imageUrl = params.imageUrl;
+      console.log(`[savePreviewIfPossible] 取得済みURLを使用（API再呼び出しなし）`);
+    } else {
+      console.log(`[savePreviewIfPossible] Figma Images API を呼び出し: fileKey=${params.fileKey}, nodeId=${params.nodeId}`);
+      imageUrl = await fetchFigmaImageUrl({
+        fileKey: params.fileKey,
+        nodeId: params.nodeId,
+        token: params.token,
+        scale: 2,
+      });
+      console.log(`[savePreviewIfPossible] 画像URL取得成功: ${imageUrl.substring(0, 100)}...`);
+    }
     const imgRes = await fetch(imageUrl, { cache: "no-store" });
     if (!imgRes.ok) {
       console.warn(`[savePreviewIfPossible] Figma 画像の取得に失敗: ${imgRes.status} ${imgRes.statusText}`);
@@ -165,14 +173,28 @@ export async function POST(req: Request) {
           started_at: new Date().toISOString(),
         });
 
-        // ✅ Figma Token がある場合: 画像を取得してコード生成（runFigmaPipeline）
-        //    Token がない場合 / Figma 失敗時: モック雛形にフォールバック（runMockPipeline）
-        //    整合: 常に何らかの出力を返す（空のまま running で残さない）
-        console.log("[generate] パイプライン実行中...", figmaToken ? "（Figma画像を使用）" : "（モック）");
+        // レート制限対策: Figma Token がある場合、Images API は 1 回だけ呼ぶ（パイプライン・保存・比較で使い回し）
+        let figmaImageUrl: string | null = null;
+        if (figmaToken) {
+          try {
+            figmaImageUrl = await fetchFigmaImageUrl({
+              fileKey,
+              nodeId,
+              token: figmaToken,
+              scale: 2,
+            });
+            console.log("[generate] Figma画像URL取得済み（1回のみAPI呼び出し）");
+          } catch (urlError) {
+            console.warn("[generate] Figma画像URLの取得に失敗（レート制限の可能性）:", urlError);
+          }
+        }
+
+        // ✅ Figma 画像URLが取れた場合: runFigmaPipeline（API再呼び出しなし） / 取れない場合: モック
+        console.log("[generate] パイプライン実行中...", figmaImageUrl ? "（Figma画像を使用）" : "（モック）");
         let artifacts: Awaited<ReturnType<typeof runMockPipeline>>;
         let figmaFallbackToMock = false;
         try {
-          artifacts = figmaToken
+          artifacts = figmaImageUrl
             ? await runFigmaPipeline({
                 ownerId: project.owner_id,
                 figmaFileKey: fileKey,
@@ -180,7 +202,8 @@ export async function POST(req: Request) {
                 sourceUrl,
                 projectId: project.id,
                 generationId: generation.id,
-                figmaToken,
+                figmaToken: figmaToken!,
+                figmaImageUrl,
               })
             : await runMockPipeline({
                 figmaFileKey: fileKey,
@@ -206,30 +229,17 @@ export async function POST(req: Request) {
           }
         }
 
-        // ✅ プレビュー画像の保存は Token があれば実行（失敗してもプロジェクト保存は続行）
-        let figmaImageUrl: string | null = null;
+        // ✅ プレビュー画像の保存（取得済み URL を渡すので API 再呼び出しなし）
         if (figmaToken) {
-          console.log(`[generate] プレビュー画像を保存します: fileKey=${fileKey}, nodeId=${nodeId}, snapshotHash=${artifacts.snapshotHash}`);
+          console.log(`[generate] プレビュー画像を保存します: snapshotHash=${artifacts.snapshotHash}`);
           try {
-            // Figma画像URLを取得（レンダリング比較用）
-            try {
-              figmaImageUrl = await fetchFigmaImageUrl({
-                fileKey,
-                nodeId,
-                token: figmaToken,
-                scale: 2,
-              });
-            } catch (urlError) {
-              console.warn("[generate] Figma画像URLの取得に失敗:", urlError);
-            }
-
-            // Storageに保存
             await savePreviewIfPossible({
               projectId: project.id,
               snapshotHash: artifacts.snapshotHash,
               fileKey,
               nodeId,
               token: figmaToken,
+              imageUrl: figmaImageUrl ?? undefined,
             });
 
             // ✅ 生成されたコードをレンダリングして比較

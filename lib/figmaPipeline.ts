@@ -9,15 +9,33 @@ export async function runFigmaPipeline(input: {
   projectId: string;
   generationId: string;
   figmaToken: string;
+  /** 取得済みの画像URLを渡すと Figma API を再呼びしません（レート制限対策） */
+  figmaImageUrl?: string;
 }) {
   console.log("Figma pipeline start", { fileKey: input.figmaFileKey, nodeId: input.figmaNodeId });
-  // レート制限対策: MVPでは nodes 取得を省略し、画像取得を優先する（呼び出し回数を半減）
-  const image = await fetchFigmaNodeImage({
-    ownerId: input.ownerId,
-    fileKey: input.figmaFileKey,
-    nodeId: input.figmaNodeId,
-    token: input.figmaToken
-  });
+  // レート制限対策: 取得済み URL があればそれで画像取得。なければ 1 回だけ API 呼び出し
+  let image: { mime: string; base64: string } | null = null;
+  if (input.figmaImageUrl) {
+    try {
+      const res = await fetch(input.figmaImageUrl, { cache: "no-store" });
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        const base64 = Buffer.from(buf).toString("base64");
+        const mime = res.headers.get("content-type") ?? "image/png";
+        image = { mime, base64 };
+      }
+    } catch {
+      // 取得失敗時は null のまま
+    }
+  }
+  if (!image) {
+    image = await fetchFigmaNodeImage({
+      ownerId: input.ownerId,
+      fileKey: input.figmaFileKey,
+      nodeId: input.figmaNodeId,
+      token: input.figmaToken
+    });
+  }
   const snapshotHash = buildSnapshotHash({
     fileKey: input.figmaFileKey,
     nodeId: input.figmaNodeId,
