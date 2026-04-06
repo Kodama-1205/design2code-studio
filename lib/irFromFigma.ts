@@ -94,7 +94,11 @@ export function buildIrFromFigma(root: FigmaNode): IrCanvas {
   const width = Math.max(1, Math.round(b?.width ?? 1200));
   const height = Math.max(1, Math.round(b?.height ?? 800));
 
-  const out: IrCanvas = { width, height, elements: [] };
+  // ルートフレームの背景色をキャンバス背景として抽出
+  const { fill: rootFill } = extractFill(root);
+  const background = rootFill !== "rgba(0,0,0,0)" ? rootFill : undefined;
+
+  const out: IrCanvas = { width, height, background, elements: [] };
 
   const walk = (n: FigmaNode) => {
     if (!isVisible(n)) return;
@@ -169,6 +173,7 @@ export function buildIrFromFigma(root: FigmaNode): IrCanvas {
     (n.children ?? []).forEach(walk);
   };
 
-  walk(root);
+  // ルートノード自体は background として扱うため、子要素から走査する
+  (root.children ?? []).forEach(walk);
   return out;
 }
