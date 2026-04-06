@@ -6,6 +6,34 @@
 
 import crypto from "crypto";
 
+export class FigmaRateLimitError extends Error {
+  public retryAfterSec: number;
+
+  constructor(message: string, retryAfterSec: number) {
+    super(message);
+    this.name = "FigmaRateLimitError";
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+
+function parseRetryAfterSeconds(value: string | null): number {
+  if (!value) return 60;
+
+  const n = Number(value);
+  if (Number.isFinite(n) && n >= 0) {
+    // ヘッダ値が秒のときはそのまま（端数があれば切り上げ）
+    return Math.max(0, Math.ceil(n));
+  }
+
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) {
+    const diffMs = date - Date.now();
+    return Math.max(0, Math.ceil(diffMs / 1000));
+  }
+
+  return 60;
+}
+
 /**
  * snapshotHash を生成（mockPipeline と形式を揃える）
  * - プレビュー Storage のパス一意化に使用
@@ -43,7 +71,10 @@ export async function fetchFigmaNodeImage(input: {
     const base64 = Buffer.from(buf).toString("base64");
     const contentType = res.headers.get("content-type") ?? "image/png";
     return { mime: contentType, base64 };
-  } catch {
+  } catch (e) {
+    // generationWorker 側が rate limit を待機状態にできるように、
+    // FigmaRateLimitError だけは握りつぶさず再スローする。
+    if (e instanceof FigmaRateLimitError) throw e;
     return null;
   }
 }
@@ -134,6 +165,13 @@ export async function fetchFigmaNodes(input: {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    if (res.status === 429) {
+      const retryAfterSec = parseRetryAfterSeconds(res.headers.get("retry-after"));
+      throw new FigmaRateLimitError(
+        `Figma nodes fetch rate-limited: ${res.status}. Retry after ${retryAfterSec}s.`,
+        retryAfterSec
+      );
+    }
     throw new Error(`Figma nodes fetch failed: ${res.status} ${text}`);
   }
 
@@ -159,7 +197,6 @@ export async function fetchFigmaImageUrl(input: {
     `https://api.figma.com/v1/images/${encodeURIComponent(fileKey)}` +
     `?ids=${encodeURIComponent(nodeId)}&format=png&scale=${encodeURIComponent(String(scale))}`;
 
-  console.log(`[fetchFigmaImageUrl] Figma Images API を呼び出し: url=${url.substring(0, 100)}..., nodeId=${nodeId}`);
   const res = await fetch(url, {
     headers: { "X-Figma-Token": token },
     cache: "no-store"
@@ -167,18 +204,16 @@ export async function fetchFigmaImageUrl(input: {
 
   const json = (await res.json().catch(() => null)) as any;
   if (!res.ok) {
-    console.error(`[fetchFigmaImageUrl] API エラー: ${res.status}`, json);
     if (res.status === 429) {
-      throw new Error(`Figma API のレート制限に達しました。数分待ってから再度お試しください。`);
+      const retryAfterSec = parseRetryAfterSeconds(res.headers.get("retry-after"));
+      throw new FigmaRateLimitError("Figma API のレート制限に達しました。", retryAfterSec);
     }
     throw new Error(`Figma images fetch failed: ${res.status} ${JSON.stringify(json)}`);
   }
   const u = json?.images?.[nodeId];
   if (typeof u !== "string" || u.length < 10) {
-    console.error(`[fetchFigmaImageUrl] 画像URLが見つかりません: nodeId=${nodeId}, response=`, json);
     throw new Error(`Figma images response missing url for nodeId=${nodeId}`);
   }
-  console.log(`[fetchFigmaImageUrl] 画像URL取得成功: ${u.substring(0, 100)}...`);
   return u;
 }
 
@@ -189,4 +224,44 @@ export function figmaColorToRgba(c: FigmaColor | undefined, fallback = "rgba(0,0
   const b = Math.round((c.b ?? 0) * 255);
   const a = c.a ?? 1;
   return `rgba(${r},${g},${b},${a})`;
+}
+
+/**
+ * Figma PAT の妥当性チェック（validate 用）
+ * - 429 の場合は FigmaRateLimitError を投げる
+ * - それ以外は { ok: false } を返す
+ */
+export async function validateFigmaToken(token: string): Promise<{
+  ok: boolean;
+  message: string;
+  status: number;
+}> {
+  try {
+    const res = await fetch("https://api.figma.com/v1/me", {
+      method: "GET",
+      headers: { "X-Figma-Token": token },
+      cache: "no-store"
+    });
+
+    if (res.ok) {
+      return { ok: true, message: "ok", status: 200 };
+    }
+
+    if (res.status === 429) {
+      const retryAfterSec = parseRetryAfterSeconds(res.headers.get("retry-after"));
+      throw new FigmaRateLimitError("Figma API がレート制限中です。", retryAfterSec);
+    }
+
+    const text = await res.text().catch(() => "");
+    return {
+      ok: false,
+      message: `invalid_token: ${res.status} ${text}`.trim(),
+      status: res.status
+    };
+  } catch (e) {
+    if (e instanceof FigmaRateLimitError) {
+      return { ok: false, message: e.message, status: 429 };
+    }
+    return { ok: false, message: e instanceof Error ? e.message : "validate failed", status: 400 };
+  }
 }

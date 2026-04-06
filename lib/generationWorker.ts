@@ -1,9 +1,9 @@
 import { envServer } from "@/lib/envServer";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { FigmaRateLimitError } from "@/lib/figma";
-import { runFigmaPipeline } from "@/lib/figmaPipeline";
+import { runPixelFigmaPipeline } from "@/lib/pixelPipeline";
 import { runMockPipeline } from "@/lib/mockPipeline";
-import { saveGenerationArtifacts, setGenerationStatus, updateGenerationJob } from "@/lib/db";
+import { saveGenerationArtifacts, saveGenerationImages, setGenerationStatus, updateGenerationJob } from "@/lib/db";
 import { getUserFigmaPat } from "@/lib/userSecrets";
 
 type JobRow = {
@@ -27,19 +27,22 @@ function clampRetryAfterSec(sec: number) {
 }
 
 export async function processGenerationJob(job: NonNullable<JobRow>, workerId: string) {
-  // Fetch generation + project
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) return { status: "failed" as const, message: "supabase_not_configured" };
+
   const { data: gen, error: genErr } = await supabaseAdmin
     .from("d2c_generations")
     .select("*")
     .eq("id", job.generation_id)
     .single();
+
   if (genErr) {
     await updateGenerationJob(job.id, {
       status: "failed",
       locked_by: null,
       locked_at: null,
       last_error: { message: genErr.message, kind: "generation_not_found" },
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     } as any);
     return { status: "failed" as const };
   }
@@ -49,7 +52,7 @@ export async function processGenerationJob(job: NonNullable<JobRow>, workerId: s
       status: "succeeded",
       locked_by: null,
       locked_at: null,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     } as any);
     return { status: "succeeded" as const };
   }
@@ -59,77 +62,97 @@ export async function processGenerationJob(job: NonNullable<JobRow>, workerId: s
     .select("*")
     .eq("id", job.project_id)
     .single();
+
   if (projErr) {
     await updateGenerationJob(job.id, {
       status: "failed",
       locked_by: null,
       locked_at: null,
       last_error: { message: projErr.message, kind: "project_not_found" },
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     } as any);
     return { status: "failed" as const };
   }
 
   const ownerId = ((job as any).owner_id ?? (project as any).owner_id) as string;
   const userToken = await getUserFigmaPat(ownerId).catch(() => null);
-  const wantFigma = /figma\.com\//.test((project as any).source_url) && Boolean(userToken);
+  const isFigmaUrl = /figma\.com\//.test((project as any).source_url);
 
-  if (/figma\.com\//.test((project as any).source_url) && !userToken) {
+  // Figma URL かつトークン未設定の場合は即失敗
+  if (isFigmaUrl && !userToken) {
     await updateGenerationJob(job.id, {
       status: "failed",
       locked_by: null,
       locked_at: null,
-      last_error: { kind: "missing_figma_token", message: "Figmaトークンが未設定です。/settings で設定してください。", workerId },
-      updated_at: new Date().toISOString()
+      last_error: { kind: "missing_figma_token", message: "Figmaトークンが未設定です。設定画面でPATを登録してください。", workerId },
+      updated_at: new Date().toISOString(),
     } as any);
     await setGenerationStatus(job.generation_id, "failed", {
       finished_at: new Date().toISOString(),
-      error_json: { message: "Figmaトークンが未設定です。設定画面でPATを登録してください。", kind: "missing_figma_token" }
+      error_json: { message: "Figmaトークンが未設定です。設定画面でPATを登録してください。", kind: "missing_figma_token" },
     });
     return { status: "failed" as const, message: "missing_figma_token" };
   }
 
   try {
-    await setGenerationStatus(job.generation_id, "running", { started_at: (gen as any).started_at ?? new Date().toISOString() });
+    await setGenerationStatus(job.generation_id, "running", {
+      started_at: (gen as any).started_at ?? new Date().toISOString(),
+    });
 
-    const finalArtifacts = wantFigma
-      ? await runFigmaPipeline({
-          ownerId,
-          figmaFileKey: (project as any).figma_file_key,
-          figmaNodeId: (project as any).figma_node_id,
-          sourceUrl: (project as any).source_url,
-          profileOverrideId: (gen as any).profile_id ?? undefined,
-          projectId: (project as any).id,
-          generationId: job.generation_id,
-          figmaToken: userToken!
-        })
-      : await runMockPipeline({
-          figmaFileKey: (project as any).figma_file_key,
-          figmaNodeId: (project as any).figma_node_id,
-          sourceUrl: (project as any).source_url,
-          profileOverrideId: (gen as any).profile_id ?? undefined,
-          projectId: (project as any).id,
-          generationId: job.generation_id
-        });
+    let artifacts: Awaited<ReturnType<typeof runMockPipeline>>;
+
+    if (isFigmaUrl && userToken) {
+      // pixelPipeline: Nodes API → IR → absolute HTML → 視覚検証
+      const pixelResult = await runPixelFigmaPipeline({
+        figmaFileKey: (project as any).figma_file_key,
+        figmaNodeId: (project as any).figma_node_id,
+        sourceUrl: (project as any).source_url,
+        figmaToken: userToken,
+      });
+
+      // 画像3点を Storage に保存（失敗しても生成は続行）
+      await saveGenerationImages({
+        projectId: (project as any).id,
+        snapshotHash: pixelResult.snapshotHash,
+        figmaPng: pixelResult.figmaPng,
+        renderPng: pixelResult.renderPng,
+        diffPng: pixelResult.diffPng,
+      }).catch((e) => {
+        console.error("[worker] 画像保存に失敗（生成は続行）:", e instanceof Error ? e.message : String(e));
+      });
+
+      artifacts = pixelResult;
+    } else {
+      artifacts = await runMockPipeline({
+        figmaFileKey: (project as any).figma_file_key,
+        figmaNodeId: (project as any).figma_node_id,
+        sourceUrl: (project as any).source_url,
+        projectId: (project as any).id,
+        generationId: job.generation_id,
+      });
+    }
 
     await saveGenerationArtifacts({
       projectId: (project as any).id,
       generationId: job.generation_id,
-      profileSnapshot: finalArtifacts.profileSnapshot,
-      irJson: finalArtifacts.ir,
-      reportJson: finalArtifacts.report,
-      files: finalArtifacts.files,
-      mappings: finalArtifacts.mappings,
-      snapshotHash: finalArtifacts.snapshotHash
+      profileSnapshot: artifacts.profileSnapshot,
+      irJson: artifacts.ir,
+      reportJson: artifacts.report,
+      files: artifacts.files,
+      mappings: artifacts.mappings,
+      snapshotHash: artifacts.snapshotHash,
     });
 
-    await setGenerationStatus(job.generation_id, "succeeded", { finished_at: new Date().toISOString(), error_json: null });
+    await setGenerationStatus(job.generation_id, "succeeded", {
+      finished_at: new Date().toISOString(),
+      error_json: null,
+    });
     await updateGenerationJob(job.id, {
       status: "succeeded",
       locked_by: null,
       locked_at: null,
       last_error: null,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     } as any);
     return { status: "succeeded" as const };
   } catch (e: any) {
@@ -142,10 +165,10 @@ export async function processGenerationJob(job: NonNullable<JobRow>, workerId: s
         locked_by: null,
         locked_at: null,
         last_error: { message: e.message, kind: "figma_rate_limited", retryAfterSec, workerId },
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       } as any);
       await setGenerationStatus(job.generation_id, "running", {
-        error_json: { state: "waiting_rate_limit", retryAfterSec, nextAttemptAt }
+        error_json: { state: "waiting_rate_limit", retryAfterSec, nextAttemptAt },
       });
       return { status: "waiting" as const, retryAfterSec, nextAttemptAt };
     }
@@ -156,18 +179,17 @@ export async function processGenerationJob(job: NonNullable<JobRow>, workerId: s
       locked_by: null,
       locked_at: null,
       last_error: { message, kind: "generation_failed", workerId },
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     } as any);
     await setGenerationStatus(job.generation_id, "failed", {
       finished_at: new Date().toISOString(),
-      error_json: { message, workerId }
+      error_json: { message, workerId },
     });
     return { status: "failed" as const, message };
   } finally {
-    // best-effort unlock for safety
+    // best-effort unlock
     try {
       await updateGenerationJob(job.id, { locked_by: null, locked_at: null } as any);
     } catch {}
   }
 }
-

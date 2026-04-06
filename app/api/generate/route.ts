@@ -1,9 +1,9 @@
 // app/api/generate/route.ts
-// Figma URL を元に project/generation 作成 → モックパイプライン → 保存（またはデモバンドル返却）。
-// Dify は使用しない。
+// Figma URL からプロジェクト/generation を作成し、pixelPipeline で生成・視覚検証する。
 
 import { NextResponse } from "next/server";
-import { parseFigmaUrl, fetchFigmaImageUrl } from "@/lib/figma";
+import { parseFigmaUrl } from "@/lib/figma";
+import { FigmaRateLimitError } from "@/lib/figma";
 import { getServerEnvOrNull, DEMO_OWNER_ID } from "@/lib/env";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import {
@@ -12,29 +12,28 @@ import {
   createGeneration,
   setGenerationStatus,
   saveGenerationArtifacts,
+  saveGenerationImages,
 } from "@/lib/db";
-import { runMockPipeline, renderAndCompareGeneratedCode } from "@/lib/mockPipeline";
-import { runFigmaPipeline } from "@/lib/figmaPipeline";
+import { runPixelFigmaPipeline } from "@/lib/pixelPipeline";
+import { runMockPipeline } from "@/lib/mockPipeline";
 import { buildDemoBundle, type DemoBundle } from "@/lib/demoBundle";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
 
-/** POST body（新規作成・再生成） */
 type GenerateBody = {
   sourceUrl: string;
   projectId?: string;
   figmaToken?: string;
+  presetId?: string;
 };
 
-/** 成功時（保存済み） */
 type SavedResponse = {
   saved: true;
   projectId: string;
   generationId: string;
 };
 
-/** デモモード（DB 未設定 or 保存失敗時） */
 type DemoResponse = {
   saved: false;
   bundle: DemoBundle;
@@ -44,59 +43,6 @@ type ErrorResponse = { message?: string; error?: string };
 
 function projectNameFromFileKey(fileKey: string): string {
   return fileKey.length > 12 ? `Figma ${fileKey.slice(0, 8)}…` : `Figma ${fileKey}`;
-}
-
-/** 既に取得済みの画像URLを渡すと API を再呼びしません（レート制限対策） */
-async function savePreviewIfPossible(params: {
-  projectId: string;
-  snapshotHash: string;
-  fileKey: string;
-  nodeId: string;
-  token: string;
-  imageUrl?: string;
-}): Promise<void> {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    console.warn("[savePreviewIfPossible] Supabase が未設定のため、プレビュー画像は保存されません");
-    return;
-  }
-
-  try {
-    let imageUrl: string;
-    if (params.imageUrl) {
-      imageUrl = params.imageUrl;
-      console.log(`[savePreviewIfPossible] 取得済みURLを使用（API再呼び出しなし）`);
-    } else {
-      console.log(`[savePreviewIfPossible] Figma Images API を呼び出し: fileKey=${params.fileKey}, nodeId=${params.nodeId}`);
-      imageUrl = await fetchFigmaImageUrl({
-        fileKey: params.fileKey,
-        nodeId: params.nodeId,
-        token: params.token,
-        scale: 2,
-      });
-      console.log(`[savePreviewIfPossible] 画像URL取得成功: ${imageUrl.substring(0, 100)}...`);
-    }
-    const imgRes = await fetch(imageUrl, { cache: "no-store" });
-    if (!imgRes.ok) {
-      console.warn(`[savePreviewIfPossible] Figma 画像の取得に失敗: ${imgRes.status} ${imgRes.statusText}`);
-      return;
-    }
-    console.log(`[savePreviewIfPossible] 画像ダウンロード成功: ${imgRes.status}`);
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    const path = `${params.projectId}/${params.snapshotHash}.png`;
-    const { error: uploadError } = await supabase.storage.from("d2c-previews").upload(path, buf, {
-      contentType: "image/png",
-      upsert: true,
-    });
-    if (uploadError) {
-      console.error(`[savePreviewIfPossible] Storage へのアップロードに失敗: ${uploadError.message}`);
-    } else {
-      console.log(`[savePreviewIfPossible] プレビュー画像を保存しました: ${path}`);
-    }
-  } catch (e) {
-    // プレビュー取得失敗は無視（ただしログは残す）
-    console.error("[savePreviewIfPossible] プレビュー保存中にエラー:", e instanceof Error ? e.message : String(e));
-  }
 }
 
 export async function POST(req: Request) {
@@ -116,10 +62,7 @@ export async function POST(req: Request) {
     const parsed = parseFigmaUrl(sourceUrl);
     if (!parsed) {
       return NextResponse.json<ErrorResponse>(
-        {
-          message:
-            "Figma URL の形式が不正です。例: https://www.figma.com/design/XXX/YYY?node-id=12%3A345（node-id 付き推奨）",
-        },
+        { message: "Figma URL の形式が不正です。例: https://www.figma.com/design/XXX/YYY?node-id=12%3A345" },
         { status: 400 }
       );
     }
@@ -128,18 +71,10 @@ export async function POST(req: Request) {
     const serverEnv = getServerEnvOrNull();
     const supabase = getSupabaseAdmin();
 
-    // デバッグ: 環境変数の読み込み状況を確認
-    if (!serverEnv) {
-      console.warn("[generate] serverEnv is null - 環境変数が未設定の可能性があります");
-    }
-    if (!supabase) {
-      console.warn("[generate] supabase is null - Supabase クライアントが生成できませんでした");
-    }
-
+    // ── 保存モード（Supabase 設定済み） ──────────────────────────────
     if (serverEnv && supabase) {
       let generationIdForCleanup: string | null = null;
       try {
-        console.log("[generate] 保存モード: プロジェクトと generation を DB に保存します");
         let projectName = projectNameFromFileKey(fileKey);
         let effectiveProjectId: string | undefined = projectId;
         if (projectId) {
@@ -151,7 +86,6 @@ export async function POST(req: Request) {
           }
         }
 
-        console.log("[generate] プロジェクトを作成/更新中...");
         const project = await createOrUpdateProject({
           id: effectiveProjectId,
           name: projectName,
@@ -161,62 +95,42 @@ export async function POST(req: Request) {
           default_profile_id: null,
         });
 
-        console.log(`[generate] プロジェクト保存完了: ${project.id}`);
-        const generation = await createGeneration({
-          project_id: project.id,
-          profile_id: null,
-        });
-        console.log(`[generate] Generation 作成完了: ${generation.id}`);
+        const generation = await createGeneration({ project_id: project.id, profile_id: null });
         generationIdForCleanup = generation.id;
 
-        await setGenerationStatus(generation.id, "running", {
-          started_at: new Date().toISOString(),
-        });
+        await setGenerationStatus(generation.id, "running", { started_at: new Date().toISOString() });
 
-        // レート制限対策: Figma Token がある場合、Images API は 1 回だけ呼ぶ（パイプライン・保存・比較で使い回し）
-        let figmaImageUrl: string | null = null;
+        // ── パイプライン選択 ──────────────────────────────────────────
+        // figmaToken あり → pixelPipeline（Nodes API → IR → absolute HTML → 視覚検証）
+        // figmaToken なし → mockPipeline（ダミー雛形）
+        let artifacts: Awaited<ReturnType<typeof runMockPipeline>>;
+
         if (figmaToken) {
           try {
-            figmaImageUrl = await fetchFigmaImageUrl({
-              fileKey,
-              nodeId,
-              token: figmaToken,
-              scale: 2,
+            const pixelResult = await runPixelFigmaPipeline({
+              figmaFileKey: fileKey,
+              figmaNodeId: nodeId,
+              sourceUrl,
+              figmaToken,
             });
-            console.log("[generate] Figma画像URL取得済み（1回のみAPI呼び出し）");
-          } catch (urlError) {
-            console.warn("[generate] Figma画像URLの取得に失敗（レート制限の可能性）:", urlError);
-          }
-        }
 
-        // ✅ Figma 画像URLが取れた場合: runFigmaPipeline（API再呼び出しなし） / 取れない場合: モック
-        console.log("[generate] パイプライン実行中...", figmaImageUrl ? "（Figma画像を使用）" : "（モック）");
-        let artifacts: Awaited<ReturnType<typeof runMockPipeline>>;
-        let figmaFallbackToMock = false;
-        try {
-          artifacts = figmaImageUrl
-            ? await runFigmaPipeline({
-                ownerId: project.owner_id,
-                figmaFileKey: fileKey,
-                figmaNodeId: nodeId,
-                sourceUrl,
-                projectId: project.id,
-                generationId: generation.id,
-                figmaToken: figmaToken!,
-                figmaImageUrl,
-              })
-            : await runMockPipeline({
-                figmaFileKey: fileKey,
-                figmaNodeId: nodeId,
-                sourceUrl,
-                projectId: project.id,
-                generationId: generation.id,
-              });
-        } catch (pipelineError) {
-          if (figmaToken) {
-            const errMsg = pipelineError instanceof Error ? pipelineError.message : String(pipelineError);
-            console.warn("[generate] Figmaパイプライン失敗、モックへフォールバック:", errMsg);
-            figmaFallbackToMock = true;
+            // 画像3点（figma原画 / レンダリング / diff）を Storage に保存
+            await saveGenerationImages({
+              projectId: project.id,
+              snapshotHash: pixelResult.snapshotHash,
+              figmaPng: pixelResult.figmaPng,
+              renderPng: pixelResult.renderPng,
+              diffPng: pixelResult.diffPng,
+            }).catch((e) => {
+              console.error("[generate] 画像保存に失敗（生成は続行）:", e instanceof Error ? e.message : String(e));
+            });
+
+            artifacts = pixelResult;
+          } catch (e) {
+            if (e instanceof FigmaRateLimitError) throw e;
+            // Figma Nodes API 失敗（権限エラー等）→ モックへフォールバック
+            const errMsg = e instanceof Error ? e.message : String(e);
+            console.error("[generate] pixelPipeline 失敗、モックへフォールバック:", errMsg);
             artifacts = await runMockPipeline({
               figmaFileKey: fileKey,
               figmaNodeId: nodeId,
@@ -224,66 +138,20 @@ export async function POST(req: Request) {
               projectId: project.id,
               generationId: generation.id,
             });
-          } else {
-            throw pipelineError;
-          }
-        }
-
-        // ✅ プレビュー画像の保存（取得済み URL を渡すので API 再呼び出しなし）
-        if (figmaToken) {
-          console.log(`[generate] プレビュー画像を保存します: snapshotHash=${artifacts.snapshotHash}`);
-          try {
-            await savePreviewIfPossible({
-              projectId: project.id,
-              snapshotHash: artifacts.snapshotHash,
-              fileKey,
-              nodeId,
-              token: figmaToken,
-              imageUrl: figmaImageUrl ?? undefined,
-            });
-
-            // ✅ 生成されたコードをレンダリングして比較
-            if (figmaImageUrl) {
-              console.log("[generate] 生成コードをレンダリングして比較します");
-              try {
-                const { diffMeta } = await renderAndCompareGeneratedCode({
-                  files: artifacts.files,
-                  figmaImageUrl,
-                  projectId: project.id,
-                  snapshotHash: artifacts.snapshotHash,
-                });
-
-                // 比較結果を report に追加
-                if (diffMeta) {
-                  (artifacts.report as any).visualDiff = diffMeta;
-                  console.log(`[generate] 比較完了: diffRatio=${(diffMeta.diffRatio * 100).toFixed(2)}%`);
-                }
-              } catch (renderError) {
-                console.warn("[generate] コードレンダリング・比較処理でエラー:", renderError);
-              }
-            }
-          } catch (previewError) {
-            // プレビュー保存失敗は無視（プロジェクト保存は続行）
-            const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
-            if (errorMsg.includes("レート制限")) {
-              console.warn("[generate] プレビュー画像の保存がレート制限により失敗しましたが、プロジェクト保存は続行します");
-            } else {
-              console.warn("[generate] プレビュー画像の保存に失敗しましたが、プロジェクト保存は続行します:", previewError);
-            }
+            (artifacts.report as Record<string, unknown>).figmaFallbackToMock = true;
+            (artifacts.report as Record<string, unknown>).figmaFallbackMessage =
+              `Figma Nodes API の取得に失敗したためモック表示しています: ${errMsg}`;
           }
         } else {
-          console.log("[generate] Figma Token が未入力のため、プレビュー画像は保存されません");
+          artifacts = await runMockPipeline({
+            figmaFileKey: fileKey,
+            figmaNodeId: nodeId,
+            sourceUrl,
+            projectId: project.id,
+            generationId: generation.id,
+          });
         }
 
-        // ✅ Figma 失敗時のフォールバック情報を report に記録（ResultTabs で表示）
-        if (figmaFallbackToMock) {
-          (artifacts.report as Record<string, unknown>).figmaFallbackToMock = true;
-          (artifacts.report as Record<string, unknown>).figmaFallbackMessage =
-            "Figma画像の取得に失敗したため、モック雛形で表示しています。対象の node-id が Frame であることを確認し、しばらく待ってから再生成してください。";
-        }
-
-        // ✅ プロジェクト・generation の保存は Token 不要で必ず実行
-        console.log("[generate] 生成結果を保存中...");
         await saveGenerationArtifacts({
           projectId: project.id,
           generationId: generation.id,
@@ -294,40 +162,28 @@ export async function POST(req: Request) {
           mappings: artifacts.mappings,
           snapshotHash: artifacts.snapshotHash,
         });
-        console.log("[generate] 生成結果の保存完了");
 
-        await setGenerationStatus(generation.id, "succeeded", {
-          finished_at: new Date().toISOString(),
-        });
+        await setGenerationStatus(generation.id, "succeeded", { finished_at: new Date().toISOString() });
 
-        console.log(`[generate] 保存完了: projectId=${project.id}, generationId=${generation.id}`);
-        const out: SavedResponse = {
-          saved: true,
-          projectId: project.id,
-          generationId: generation.id,
-        };
+        const out: SavedResponse = { saved: true, projectId: project.id, generationId: generation.id };
         return NextResponse.json(out, { status: 200 });
       } catch (saveError: unknown) {
         const msg = saveError instanceof Error ? saveError.message : "保存中にエラーが発生しました。";
-        // パイプライン/保存失敗時: generation を failed に更新（空のまま running で残さない）
         if (generationIdForCleanup) {
           await setGenerationStatus(generationIdForCleanup, "failed", {
             finished_at: new Date().toISOString(),
             error_json: { message: msg },
           }).catch(() => {});
         }
-        const isNetworkError =
-          /fetch failed|Failed to fetch|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network/i.test(msg);
+        const isNetworkError = /fetch failed|Failed to fetch|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network/i.test(msg);
         const displayMessage = isNetworkError
           ? `保存に失敗しました: ${msg}（Supabase の URL・キーおよびサーバーからの接続を確認してください）`
           : `保存に失敗しました: ${msg}`;
-        return NextResponse.json<ErrorResponse>(
-          { message: displayMessage, error: msg },
-          { status: 500 }
-        );
+        return NextResponse.json<ErrorResponse>({ message: displayMessage, error: msg }, { status: 500 });
       }
     }
 
+    // ── デモモード（Supabase 未設定） ─────────────────────────────────
     const demoProjectId = projectId ?? crypto.randomUUID();
     const demoGenerationId = crypto.randomUUID();
 
@@ -362,9 +218,6 @@ export async function POST(req: Request) {
     return NextResponse.json(out, { status: 200 });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "生成に失敗しました。";
-    return NextResponse.json<ErrorResponse>(
-      { message, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json<ErrorResponse>({ message, error: message }, { status: 500 });
   }
 }

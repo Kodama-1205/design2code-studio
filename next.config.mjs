@@ -14,18 +14,15 @@ const nextConfig = {
     ignoreBuildErrors: true
   },
 
-  // ✅ playwright-core を外部パッケージとして扱う（サーバーサイドのみで使用）
-  //    これにより、ビルド時に playwright-core の HTML ファイルが webpack で処理されない
-  serverComponentsExternalPackages: ["playwright-core"],
+  // playwright-core / @sparticuz/chromium はサーバーサイドのみ使用。バンドルしない
+  experimental: {
+    serverComponentsExternalPackages: ["playwright-core", "@sparticuz/chromium"]
+  },
 
-  // ✅ webpack の設定で playwright-core を外部化
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // サーバーサイドでは playwright-core を外部化
       config.externals = config.externals || [];
-      config.externals.push({
-        "playwright-core": "commonjs playwright-core"
-      });
+      config.externals.push("playwright-core", "@sparticuz/chromium");
     }
     return config;
   }
